@@ -78,11 +78,12 @@ def create_app(
         )
 
     # Register routers (imported here to avoid circular imports)
-    from waggle.routers import alerts, hives, readings, status
+    from waggle.routers import alerts, hives, readings, status, traffic
 
     app.include_router(hives.create_router(verify_key), prefix="/api")
     app.include_router(readings.create_router(verify_key), prefix="/api")
     app.include_router(alerts.create_router(verify_key), prefix="/api")
     app.include_router(status.create_router(), prefix="/api")
+    app.include_router(traffic.create_router(verify_key), prefix="/api")
 
     return app
