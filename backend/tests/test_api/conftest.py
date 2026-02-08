@@ -10,11 +10,18 @@ from waggle.main import create_app
 @pytest.fixture
 async def app(tmp_path):
     db_path = tmp_path / "test.db"
+    db_url = f"sqlite+aiosqlite:///{db_path}"
     test_app = create_app(
-        db_url=f"sqlite+aiosqlite:///{db_path}",
+        db_url=db_url,
         api_key="test-key",
     )
+    # Manually init DB and set engine on app.state since ASGITransport
+    # does not trigger the ASGI lifespan events.
+    engine = create_engine_from_url(db_url)
+    await init_db(engine)
+    test_app.state.engine = engine
     yield test_app
+    await engine.dispose()
 
 
 @pytest.fixture
