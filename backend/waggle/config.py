@@ -1,7 +1,13 @@
 """Application configuration via pydantic-settings."""
 
+import sqlite3
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+assert sqlite3.sqlite_version_info >= (3, 31, 0), (
+    f"SQLite >= 3.31.0 required for generated columns, got {sqlite3.sqlite_version}"
+)
 
 
 class Settings(BaseSettings):
