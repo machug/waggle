@@ -1,0 +1,41 @@
+import { error } from '@sveltejs/kit';
+import { apiGet } from '$lib/server/api';
+import type { PageServerLoad } from './$types';
+
+/** Interval presets mapped to query parameters */
+const INTERVAL_MAP: Record<string, { interval: string; limit: number }> = {
+	'24h': { interval: 'hourly', limit: 24 },
+	'7d': { interval: 'hourly', limit: 168 },
+	'30d': { interval: 'hourly', limit: 720 },
+	'90d': { interval: 'hourly', limit: 2160 }
+};
+
+export const load: PageServerLoad = async ({ params, url }) => {
+	const hiveId = params.id;
+	const range = url.searchParams.get('range') || '7d';
+	const preset = INTERVAL_MAP[range] ?? INTERVAL_MAP['7d'];
+
+	try {
+		const [hive, readings, alerts] = await Promise.all([
+			apiGet<any>(`/api/hives/${hiveId}`),
+			apiGet<any>(
+				`/api/hives/${hiveId}/readings?interval=${preset.interval}&limit=${preset.limit}`
+			),
+			apiGet<any>(`/api/alerts?hive_id=${hiveId}&limit=10`)
+		]);
+
+		return {
+			hive,
+			readings: readings.items ?? [],
+			readingsInterval: readings.interval,
+			alerts: alerts.items ?? [],
+			range
+		};
+	} catch (err: any) {
+		if (err?.message?.includes('404')) {
+			error(404, 'Hive not found');
+		}
+		// Re-throw other errors so SvelteKit handles them
+		throw err;
+	}
+};

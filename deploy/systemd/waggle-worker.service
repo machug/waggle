@@ -1,0 +1,32 @@
+[Unit]
+Description=Waggle Worker - MQTT subscriber, sensor ingestion, and alerting
+Documentation=https://github.com/waggle/waggle
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=waggle
+Group=waggle
+WorkingDirectory=/opt/waggle/backend
+EnvironmentFile=/etc/waggle/.env
+ExecStart=/opt/waggle/.venv/bin/python -m waggle worker
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=waggle-worker
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/waggle
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
