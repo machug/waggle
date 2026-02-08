@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-08
+
+### Added
+
+**Backend**
+- ESP32-CAM photo upload endpoint with multipart JPEG handling and auto-rotation
+- Photo serving endpoint with optional signed URL support
+- YOLOv8-nano ML worker with inference loop, crash recovery, and stale photo cleanup
+- Varroa mite load tracking with daily aggregation and cross-hive overview
+- Inspection CRUD with UUID primary keys for bidirectional sync
+- Cloud sync service: push (readings, alerts, photos), pull (inspections, alert acks)
+- Supabase schema with RLS policies, RPC functions, and storage buckets
+- Webhook notification dispatcher with HMAC signing
+- Weather endpoint proxying external API
+- Admin key authentication for camera registration
+- 4 ML-based alert rules: VARROA_HIGH_LOAD, VARROA_RISING, QUEEN_MISSING, PEST_DETECTED
+- Photo pruning service with configurable retention
+- Phase 3 Prometheus metrics (inference latency, sync lag, photo count)
+- 495 tests total (198 new), 0 ruff warnings
+
+**Dashboard**
+- Dual-mode data layer: local (SvelteKit proxy) or cloud (Supabase direct)
+- PhotoFeed component with responsive grid, filter buttons, and ML status badges
+- PhotoDetail overlay with SVG bounding box visualization (color-coded by class)
+- VarroaChart with Chart.js line graph, shaded severity zones, and 30/60/90 day toggle
+- VarroaTable for cross-hive mite load comparison
+- InspectionForm for manual hive inspection logging
+- InspectionTimeline with chronological history and source badges
+- WeatherOverlay widget with current conditions
+- LoginForm for Supabase cloud authentication
+- Signed URL helper with client-side batch caching
+- Varroa tracking page (/varroa) with summary cards
+- Inspection log page (/inspections) with form and timeline
+- Cloud login page (/login) for remote access
+
+**Firmware**
+- ESP32-CAM node firmware: deep sleep wake cycle, photo capture, WiFi HTTP POST upload
+- NVS configuration for hive_id, WiFi credentials, API endpoint
+- AI-Thinker ESP32-CAM pin configuration with PSRAM support
+
+**Infrastructure**
+- systemd units for ML worker, sync service, and notification dispatcher
+- Supabase project configuration for local development
+- Updated .env.example with all Phase 3 variables
+
 ## [0.2.0] - 2026-02-08
 
 ### Added
