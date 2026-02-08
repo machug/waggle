@@ -135,3 +135,29 @@ def test_cli_usage_includes_notify():
     usage_calls = [str(c) for c in mock_print.call_args_list]
     usage_text = " ".join(usage_calls)
     assert "notify" in usage_text
+
+
+def test_cli_sync_command():
+    """The 'sync' CLI command should call run_sync_service."""
+    with patch("waggle.__main__.run_sync_service") as mock_sync:
+        with patch.object(sys, "argv", ["waggle", "sync"]):
+            from waggle.__main__ import main
+
+            main()
+        mock_sync.assert_called_once()
+
+
+def test_cli_usage_includes_sync():
+    """Usage string should mention 'sync' command."""
+    from waggle.__main__ import main
+
+    with (
+        patch.object(sys, "argv", ["waggle", "unknown-command"]),
+        patch("builtins.print") as mock_print,
+        pytest.raises(SystemExit),
+    ):
+        main()
+
+    usage_calls = [str(c) for c in mock_print.call_args_list]
+    usage_text = " ".join(usage_calls)
+    assert "sync" in usage_text

@@ -1,4 +1,4 @@
-"""Entry point: python -m waggle [api|worker|bridge|notify]"""
+"""Entry point: python -m waggle [api|worker|bridge|notify|sync]"""
 
 import asyncio
 import sys
@@ -43,6 +43,26 @@ def run_notify():
     print(f"Dispatched webhooks for {count} alert(s).")
 
 
+def run_sync_service():
+    settings = Settings()
+
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_KEY:
+        print("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set for cloud sync.")
+        sys.exit(1)
+
+    from waggle.services.sync import run_sync
+
+    asyncio.run(
+        run_sync(
+            db_url=settings.DB_URL,
+            photo_dir=settings.PHOTO_DIR,
+            supabase_url=settings.SUPABASE_URL,
+            supabase_key=settings.SUPABASE_SERVICE_KEY,
+            interval_sec=settings.SYNC_INTERVAL_SEC,
+        )
+    )
+
+
 def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "api"
 
@@ -56,9 +76,11 @@ def main():
         sys.exit(1)
     elif command == "notify":
         run_notify()
+    elif command == "sync":
+        run_sync_service()
     else:
         print(f"Unknown command: {command}")
-        print("Usage: python -m waggle [api|worker|bridge|notify]")
+        print("Usage: python -m waggle [api|worker|bridge|notify|sync]")
         sys.exit(1)
 
 

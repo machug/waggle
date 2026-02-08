@@ -7,6 +7,7 @@ import os
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from waggle.database import create_engine_from_url, init_db
 from waggle.models import (
     Alert,
     BeeCount,
@@ -428,3 +429,81 @@ async def pull_alert_acks(engine: AsyncEngine, supabase_client) -> int:
     if count > 0:
         logger.info("Pulled %d alert acknowledgment(s) from Supabase", count)
     return count
+
+
+async def run_sync(
+    db_url: str,
+    photo_dir: str,
+    supabase_url: str,
+    supabase_key: str,
+    interval_sec: int = 300,
+    max_iterations: int | None = None,
+) -> None:
+    """Run the sync service main loop.
+
+    Wakes every interval_sec seconds and runs:
+    1. Push all tables (row data)
+    2. Push photo files
+    3. Pull inspections
+    4. Pull alert acknowledgments
+    """
+    import asyncio
+
+    try:
+        from supabase import create_client
+    except ImportError:
+        logger.error("supabase-py is required for cloud sync. Install with: pip install supabase")
+        return
+
+    engine = create_engine_from_url(db_url)
+    await init_db(engine)
+
+    supabase_client = create_client(supabase_url, supabase_key)
+
+    iteration = 0
+    try:
+        while True:
+            if max_iterations is not None and iteration >= max_iterations:
+                break
+
+            logger.info("Sync cycle %d starting...", iteration + 1)
+
+            try:
+                # 1. Push rows
+                push_result = await push_rows(engine, supabase_client)
+                total_pushed = sum(push_result.values())
+                if total_pushed > 0:
+                    logger.info("Pushed %d row(s): %s", total_pushed, push_result)
+
+                # 2. Push photo files
+                files_pushed = await push_files(engine, supabase_client, photo_dir)
+                if files_pushed > 0:
+                    logger.info("Pushed %d file(s)", files_pushed)
+
+                # 3. Pull inspections
+                inspections_pulled = await pull_inspections(engine, supabase_client)
+
+                # 4. Pull alert acks
+                acks_pulled = await pull_alert_acks(engine, supabase_client)
+
+                logger.info(
+                    "Sync cycle %d complete: pushed=%d rows + %d files, "
+                    "pulled=%d inspections + %d acks",
+                    iteration + 1,
+                    total_pushed,
+                    files_pushed,
+                    inspections_pulled,
+                    acks_pulled,
+                )
+            except Exception:
+                logger.exception("Sync cycle %d failed", iteration + 1)
+
+            iteration += 1
+
+            if max_iterations is not None and iteration >= max_iterations:
+                break
+
+            await asyncio.sleep(interval_sec)
+    finally:
+        await engine.dispose()
+        logger.info("Sync service stopped after %d cycles", iteration)

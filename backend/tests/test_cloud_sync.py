@@ -28,6 +28,7 @@ from waggle.services.sync import (
     pull_inspections,
     push_files,
     push_rows,
+    run_sync,
 )
 from waggle.utils.timestamps import utc_now
 
@@ -894,3 +895,47 @@ async def test_pull_handles_network_error(sync_engine):
             select(SyncState.value).where(SyncState.key == "pull_inspections_watermark")
         )
         assert result.scalar_one_or_none() is None
+
+
+# ---------------------------------------------------------------------------
+# Main loop tests
+# ---------------------------------------------------------------------------
+
+
+async def test_run_sync_single_iteration(tmp_path):
+    """Run with max_iterations=1, verify all 4 sync operations are called."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    db_path = tmp_path / "test.db"
+    db_url = f"sqlite+aiosqlite:///{db_path}"
+    photo_dir = str(tmp_path / "photos")
+    os.makedirs(photo_dir, exist_ok=True)
+
+    mock_push_rows = AsyncMock(return_value={"hives": 1})
+    mock_push_files = AsyncMock(return_value=2)
+    mock_pull_inspections = AsyncMock(return_value=3)
+    mock_pull_alert_acks = AsyncMock(return_value=1)
+
+    mock_create_client = MagicMock(return_value=MagicMock())
+
+    with (
+        patch("waggle.services.sync.push_rows", mock_push_rows),
+        patch("waggle.services.sync.push_files", mock_push_files),
+        patch("waggle.services.sync.pull_inspections", mock_pull_inspections),
+        patch("waggle.services.sync.pull_alert_acks", mock_pull_alert_acks),
+        patch("supabase.create_client", mock_create_client),
+    ):
+        await run_sync(
+            db_url=db_url,
+            photo_dir=photo_dir,
+            supabase_url="https://fake.supabase.co",
+            supabase_key="fake-key",
+            interval_sec=1,
+            max_iterations=1,
+        )
+
+    mock_push_rows.assert_called_once()
+    mock_push_files.assert_called_once()
+    mock_pull_inspections.assert_called_once()
+    mock_pull_alert_acks.assert_called_once()
+    mock_create_client.assert_called_once_with("https://fake.supabase.co", "fake-key")
