@@ -23,7 +23,12 @@
 
 		loading = true;
 		try {
-			const { error } = await getSupabase().auth.signInWithPassword({
+			const supabase = getSupabase();
+			if (!supabase) {
+				errorMsg = 'Supabase client not configured';
+				return;
+			}
+			const { error } = await supabase.auth.signInWithPassword({
 				email,
 				password
 			});

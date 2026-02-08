@@ -50,7 +50,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	try {
 		const [alerts, hives] = await Promise.all([
 			apiGet<AlertsResponse>(`/api/alerts?${params.toString()}`),
-			apiGet<HivesResponse>('/api/hives?limit=250')
+			apiGet<HivesResponse>('/api/hives?limit=200')
 		]);
 		return {
 			alerts: alerts.items,

@@ -25,18 +25,32 @@
 		onsubmit?: () => void;
 	} = $props();
 
+	// Extract initial values (intentionally captured once, not reactive)
+	// svelte-ignore state_referenced_locally
+	const initialHiveId = inspection?.hive_id ?? (hives.length > 0 ? hives[0].id : 0);
+	// svelte-ignore state_referenced_locally
+	const initialDate = inspection?.inspected_at
+		? inspection.inspected_at.slice(0, 10)
+		: new Date().toISOString().slice(0, 10);
+	// svelte-ignore state_referenced_locally
+	const initialQueenSeen = inspection?.queen_seen ?? false;
+	// svelte-ignore state_referenced_locally
+	const initialBroodPattern = inspection?.brood_pattern ?? 'good';
+	// svelte-ignore state_referenced_locally
+	const initialTreatmentType = inspection?.treatment_type ?? '';
+	// svelte-ignore state_referenced_locally
+	const initialTreatmentNotes = inspection?.treatment_notes ?? '';
+	// svelte-ignore state_referenced_locally
+	const initialNotes = inspection?.notes ?? '';
+
 	// Form state
-	let hiveId = $state(inspection?.hive_id ?? (hives.length > 0 ? hives[0].id : 0));
-	let inspectedAt = $state(
-		inspection?.inspected_at
-			? inspection.inspected_at.slice(0, 10)
-			: new Date().toISOString().slice(0, 10)
-	);
-	let queenSeen = $state(inspection?.queen_seen ?? false);
-	let broodPattern = $state(inspection?.brood_pattern ?? 'good');
-	let treatmentType = $state(inspection?.treatment_type ?? '');
-	let treatmentNotes = $state(inspection?.treatment_notes ?? '');
-	let notes = $state(inspection?.notes ?? '');
+	let hiveId = $state(initialHiveId);
+	let inspectedAt = $state(initialDate);
+	let queenSeen = $state(initialQueenSeen);
+	let broodPattern = $state(initialBroodPattern);
+	let treatmentType = $state(initialTreatmentType);
+	let treatmentNotes = $state(initialTreatmentNotes);
+	let notes = $state(initialNotes);
 
 	let submitting = $state(false);
 	let error = $state('');
