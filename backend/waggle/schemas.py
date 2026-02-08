@@ -56,6 +56,16 @@ class LatestReading(BaseModel):
     flags: int
 
 
+class LatestTrafficOut(BaseModel):
+    """Latest traffic embedded in hive detail."""
+
+    observed_at: str
+    bees_in: int
+    bees_out: int
+    net_out: int
+    total_traffic: int
+
+
 class HiveOut(BaseModel):
     id: int
     name: str
@@ -65,6 +75,8 @@ class HiveOut(BaseModel):
     last_seen_at: str | None
     created_at: str
     latest_reading: LatestReading | None = None
+    latest_traffic: LatestTrafficOut | None = None
+    activity_score_today: int | None = None
 
 
 class HivesResponse(BaseModel):
@@ -119,6 +131,63 @@ class ReadingsResponse(BaseModel):
     offset: int
 
 
+# --- Traffic ---
+
+
+class TrafficRecordOut(BaseModel):
+    """Single bee count record (raw interval)."""
+
+    id: int
+    reading_id: int
+    hive_id: int
+    observed_at: str
+    period_ms: int
+    bees_in: int
+    bees_out: int
+    net_out: int
+    total_traffic: int
+    lane_mask: int
+    stuck_mask: int
+    flags: int
+
+
+class TrafficAggregateOut(BaseModel):
+    """Aggregated traffic for hourly/daily interval."""
+
+    period_start: str
+    period_end: str
+    reading_count: int
+    sum_bees_in: int
+    sum_bees_out: int
+    sum_net_out: int
+    sum_total_traffic: int
+    avg_bees_in_per_min: float
+    avg_bees_out_per_min: float
+
+
+class TrafficResponse(BaseModel):
+    """Paginated traffic response."""
+
+    items: list[TrafficRecordOut | TrafficAggregateOut]
+    interval: str  # "raw", "hourly", "daily"
+    total: int
+    limit: int
+    offset: int
+
+
+class TrafficSummaryOut(BaseModel):
+    """Daily traffic summary."""
+
+    date: str
+    total_in: int
+    total_out: int
+    net_out: int
+    total_traffic: int
+    peak_hour: int | None
+    rolling_7d_avg_total: int | None
+    activity_score: int | None
+
+
 # --- Alerts ---
 
 
@@ -165,6 +234,9 @@ class HubStatusOut(BaseModel):
     hive_count: int
     reading_count_24h: int
     services: ServiceHealth
+    traffic_readings_24h: int = 0
+    phase2_nodes_active: int = 0
+    stuck_lanes_total: int = 0
 
 
 # --- Error ---

@@ -21,7 +21,7 @@
  * @param input   Source data (may contain zero bytes).
  * @param len     Number of bytes to encode.
  * @param output  Destination buffer. Must be at least (len + ceil(len/254) + 1)
- *                bytes. For the Waggle 38-byte frame, 41 bytes suffices.
+ *                bytes. For the Waggle frames (38 or 54 bytes), 70 bytes suffices.
  * @return        Number of bytes written to `output` (does NOT include a
  *                trailing 0x00 delimiter — the caller must append that).
  *

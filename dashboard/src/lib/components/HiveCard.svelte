@@ -5,6 +5,8 @@
 	 * battery level with colour coding, and an optional weight sparkline.
 	 */
 	import Sparkline from './Sparkline.svelte';
+	import TrafficIndicator from './TrafficIndicator.svelte';
+	import ActivityBadge from './ActivityBadge.svelte';
 
 	interface Reading {
 		weight_kg: number;
@@ -16,6 +18,14 @@
 		flags: number;
 	}
 
+	interface LatestTraffic {
+		observed_at: string;
+		bees_in: number;
+		bees_out: number;
+		net_out: number;
+		total_traffic: number;
+	}
+
 	interface Hive {
 		id: number;
 		name: string;
@@ -25,11 +35,15 @@
 		last_seen_at: string | null;
 		created_at: string;
 		latest_reading: Reading | null;
+		latest_traffic: LatestTraffic | null;
+		activity_score_today: number | null;
 	}
 
-	let { hive, weightHistory = [] }: {
+	let { hive, weightHistory = [], trafficHistory = [], hasCriticalAlert = false }: {
 		hive: Hive;
 		weightHistory?: number[];
+		trafficHistory?: { bees_in: number; bees_out: number }[];
+		hasCriticalAlert?: boolean;
 	} = $props();
 
 	// ---- battery helpers ----
@@ -68,8 +82,9 @@
 
 <a
 	href="/hive/{hive.id}"
-	class="block rounded-xl border border-amber-200 bg-white shadow-sm hover:shadow-md
-	       transition-shadow p-5 group"
+	class="block rounded-xl border bg-white shadow-sm hover:shadow-md
+	       transition-shadow p-5 group
+	       {hasCriticalAlert ? 'border-red-400 animate-pulse' : 'border-amber-200'}"
 >
 	<!-- Header row -->
 	<div class="flex items-start justify-between gap-2 mb-3">
@@ -100,6 +115,10 @@
 				</span>
 			{/if}
 		</div>
+
+		{#if hive.activity_score_today != null || hive.latest_traffic}
+			<ActivityBadge score={hive.activity_score_today} />
+		{/if}
 	</div>
 
 	{#if hive.latest_reading}
@@ -129,11 +148,24 @@
 					{hive.latest_reading.pressure_hpa.toFixed(0)} hPa
 				</span>
 			</div>
+
+			{#if hive.latest_traffic}
+				<div class="col-span-2 flex items-center gap-2 pt-1 border-t border-amber-50">
+					<span class="text-gray-500 text-sm">Traffic</span>
+					<span class="font-medium text-green-600 text-sm">{hive.latest_traffic.bees_in} in</span>
+					<span class="font-medium text-orange-600 text-sm">{hive.latest_traffic.bees_out} out</span>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Sparkline + last seen -->
 		<div class="flex items-center justify-between pt-2 border-t border-amber-100">
-			<Sparkline values={weightHistory} />
+			<div class="flex items-center gap-2">
+				<Sparkline values={weightHistory} />
+				{#if trafficHistory.length > 1}
+					<TrafficIndicator data={trafficHistory} />
+				{/if}
+			</div>
 			<span class="text-xs text-gray-400">
 				{lastSeen}
 			</span>

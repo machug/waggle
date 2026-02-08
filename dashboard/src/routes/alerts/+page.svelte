@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
+	import AlertEvidence from '$lib/components/AlertEvidence.svelte';
 
 	let { data } = $props();
 
@@ -16,6 +17,9 @@
 	const alertTypes = [
 		{ value: '', label: 'All Types' },
 		{ value: 'POSSIBLE_SWARM', label: 'Possible Swarm' },
+		{ value: 'ABSCONDING', label: 'Absconding' },
+		{ value: 'ROBBING', label: 'Robbing' },
+		{ value: 'LOW_ACTIVITY', label: 'Low Activity' },
 		{ value: 'HIGH_TEMP', label: 'High Temp' },
 		{ value: 'LOW_TEMP', label: 'Low Temp' },
 		{ value: 'LOW_BATTERY', label: 'Low Battery' },
@@ -24,6 +28,7 @@
 
 	const severities = [
 		{ value: '', label: 'All Severities' },
+		{ value: 'critical', label: 'Critical' },
 		{ value: 'high', label: 'High' },
 		{ value: 'medium', label: 'Medium' },
 		{ value: 'low', label: 'Low' }
@@ -66,6 +71,8 @@
 
 	function severityColor(severity: string): string {
 		switch (severity) {
+			case 'critical':
+				return 'bg-red-200 text-red-800 border-red-400';
 			case 'high':
 				return 'bg-red-100 text-red-700 border-red-300';
 			case 'medium':
@@ -79,6 +86,8 @@
 
 	function severityDot(severity: string): string {
 		switch (severity) {
+			case 'critical':
+				return 'bg-red-600';
 			case 'high':
 				return 'bg-red-500';
 			case 'medium':
@@ -92,6 +101,8 @@
 
 	function cardBorder(severity: string): string {
 		switch (severity) {
+			case 'critical':
+				return 'border-l-red-600';
 			case 'high':
 				return 'border-l-red-500';
 			case 'medium':
@@ -115,6 +126,12 @@
 				return 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z'; // warning triangle
 			case 'POSSIBLE_SWARM':
 				return 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z'; // clock/swarm
+			case 'ABSCONDING':
+				return 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9'; // arrow-right-on-rect
+			case 'ROBBING':
+				return 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z'; // warning
+			case 'LOW_ACTIVITY':
+				return 'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z'; // chart-bar (low)
 			default:
 				return 'M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0'; // bell
 		}
@@ -132,6 +149,12 @@
 				return 'No Data';
 			case 'POSSIBLE_SWARM':
 				return 'Possible Swarm';
+			case 'ABSCONDING':
+				return 'Absconding';
+			case 'ROBBING':
+				return 'Robbing';
+			case 'LOW_ACTIVITY':
+				return 'Low Activity';
 			default:
 				return type;
 		}
@@ -308,6 +331,9 @@
 
 						<!-- Message -->
 						<p class="text-sm text-gray-700 mb-3">{alert.message}</p>
+
+						<!-- Alert Evidence (correlation alerts) -->
+						<AlertEvidence {alert} />
 
 						<!-- Action row -->
 						<div class="flex items-center justify-between">

@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.database import create_engine_from_url, init_db
-from waggle.models import Alert, Hive, SensorReading
+from waggle.models import Alert, BeeCount, Hive, SensorReading
 
 
 @pytest.fixture
@@ -109,3 +109,14 @@ async def test_reading_dedup_unique_index(session):
     session.add(SensorReading(**common))
     with pytest.raises(Exception):
         await session.commit()
+
+
+async def test_bee_count_model_fields():
+    """BeeCount model exposes all expected columns."""
+    columns = {c.name for c in BeeCount.__table__.columns}
+    expected = {
+        "id", "reading_id", "hive_id", "observed_at", "ingested_at",
+        "period_ms", "bees_in", "bees_out", "net_out", "total_traffic",
+        "lane_mask", "stuck_mask", "sequence", "flags", "sender_mac",
+    }
+    assert columns >= expected

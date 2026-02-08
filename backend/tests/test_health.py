@@ -231,3 +231,43 @@ class TestCheckServiceHealth:
 
     def test_missing_directory_returns_unknown(self):
         assert check_service_health("bridge", "/nonexistent/path/abc123") == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 metrics
+# ---------------------------------------------------------------------------
+
+
+def test_traffic_ingested_counter():
+    """traffic_ingested counter is registered and incrementable."""
+    from waggle.health import traffic_ingested
+    before = traffic_ingested.labels(hive_id="1")._value.get()
+    traffic_ingested.labels(hive_id="1").inc()
+    after = traffic_ingested.labels(hive_id="1")._value.get()
+    assert after == before + 1
+
+
+def test_traffic_dropped_counter():
+    """traffic_dropped counter is registered and incrementable."""
+    from waggle.health import traffic_dropped
+    before = traffic_dropped.labels(reason="validation")._value.get()
+    traffic_dropped.labels(reason="validation").inc()
+    after = traffic_dropped.labels(reason="validation")._value.get()
+    assert after == before + 1
+
+
+def test_correlation_alerts_counter():
+    """correlation_alerts_fired counter is registered and incrementable."""
+    from waggle.health import correlation_alerts_fired
+    before = correlation_alerts_fired.labels(type="POSSIBLE_SWARM")._value.get()
+    correlation_alerts_fired.labels(type="POSSIBLE_SWARM").inc()
+    after = correlation_alerts_fired.labels(type="POSSIBLE_SWARM")._value.get()
+    assert after == before + 1
+
+
+def test_stuck_lanes_gauge():
+    """stuck_lanes_current gauge is registered and settable."""
+    from waggle.health import stuck_lanes_current
+    stuck_lanes_current.labels(hive_id="1").set(2)
+    assert stuck_lanes_current.labels(hive_id="1")._value.get() == 2
+    stuck_lanes_current.labels(hive_id="1").set(0)

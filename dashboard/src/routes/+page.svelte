@@ -8,6 +8,7 @@
 	startPolling(60_000);
 
 	const hives = $derived(data.hives ?? []);
+	const criticalHiveIds = $derived(new Set(data.criticalHiveIds ?? []));
 </script>
 
 <svelte:head>
@@ -52,7 +53,10 @@
 		<!-- Hive card grid: 1 col mobile, 2 cols tablet, 3 cols desktop -->
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 			{#each hives as hive (hive.id)}
-				<HiveCard {hive} />
+				<HiveCard
+					{hive}
+					hasCriticalAlert={criticalHiveIds.has(hive.id)}
+				/>
 			{/each}
 		</div>
 	{/if}
