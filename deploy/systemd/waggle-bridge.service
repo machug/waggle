@@ -1,0 +1,36 @@
+[Unit]
+Description=Waggle Bridge - ESP32 serial reader and MQTT publisher
+Documentation=https://github.com/waggle/waggle
+After=network.target
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+User=waggle
+Group=waggle
+WorkingDirectory=/opt/waggle/backend
+EnvironmentFile=/etc/waggle/.env
+ExecStart=/opt/waggle/.venv/bin/python -m waggle bridge
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=waggle-bridge
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/waggle
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Serial port access
+SupplementaryGroups=dialout
+DeviceAllow=/dev/ttyUSB0 rw
+
+[Install]
+WantedBy=multi-user.target

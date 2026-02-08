@@ -1,0 +1,31 @@
+[Unit]
+Description=Waggle API - FastAPI server for dashboard and integrations
+Documentation=https://github.com/waggle/waggle
+After=network.target waggle-worker.service
+
+[Service]
+Type=simple
+User=waggle
+Group=waggle
+WorkingDirectory=/opt/waggle/backend
+EnvironmentFile=/etc/waggle/.env
+ExecStart=/opt/waggle/.venv/bin/python -m waggle api
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=waggle-api
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/waggle
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
