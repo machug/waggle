@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.database import create_engine_from_url, init_db
 from waggle.main import create_app
-from waggle.models import Hive, SensorReading
+from waggle.models import SensorReading
 
 
 @pytest.fixture

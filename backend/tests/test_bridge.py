@@ -1,11 +1,12 @@
 """Tests for bridge service (serial frame processing)."""
 
 import struct
+
 import pytest
 
+from waggle.services.bridge import BridgeProcessor
 from waggle.utils.cobs import cobs_encode
 from waggle.utils.crc8 import crc8
-from waggle.services.bridge import BridgeProcessor
 
 
 def _build_frame(

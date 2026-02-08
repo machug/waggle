@@ -13,7 +13,8 @@ class PayloadError(Exception):
 # Offsets 0-16: data fields (17 bytes)
 # Offset 17: CRC-8 over bytes 0-16
 # Offsets 18-31: reserved (14 bytes)
-_PHASE1_FORMAT = "<BBHihHHHB"  # 17 bytes: hive_id, msg_type, seq, weight, temp, hum, pres, batt, flags
+# 17 bytes: hive_id, msg_type, seq, weight, temp, hum, pres, batt, flags
+_PHASE1_FORMAT = "<BBHihHHHB"
 
 
 def deserialize_payload(data: bytes) -> dict:
@@ -29,7 +30,8 @@ def deserialize_payload(data: bytes) -> dict:
         )
 
     fields = struct.unpack_from(_PHASE1_FORMAT, data, 0)
-    hive_id, msg_type, sequence, weight_g, temp_c_x100, humidity_x100, pressure_hpa_x10, battery_mv, flags = fields
+    (hive_id, msg_type, sequence, weight_g, temp_c_x100,
+     humidity_x100, pressure_hpa_x10, battery_mv, flags) = fields
 
     if msg_type != 0x01:
         raise PayloadError(f"Unknown msg_type 0x{msg_type:02X}")

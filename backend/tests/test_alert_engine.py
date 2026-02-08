@@ -1,5 +1,7 @@
 """Tests for alert engine."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +9,6 @@ from waggle.database import create_engine_from_url, init_db
 from waggle.models import Alert, Hive, SensorReading
 from waggle.services.alert_engine import AlertEngine
 from waggle.utils.timestamps import utc_now
-from datetime import datetime, timezone, timedelta
 
 
 @pytest.fixture
@@ -261,7 +262,7 @@ async def test_cooldown_different_types_independent(engine, alert_engine, hive_w
 
 # POSSIBLE_SWARM tests
 async def test_swarm_fires(engine, alert_engine, hive_with_reading):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Insert 6 readings over the past hour with stable weight, then a drop
     for i in range(6):
         ts = (now - timedelta(minutes=50 - i * 10)).strftime(
@@ -307,7 +308,7 @@ async def test_swarm_insufficient_data(engine, alert_engine, hive_with_reading):
 
 async def test_swarm_no_fire_small_drop(engine, alert_engine, hive_with_reading):
     """Weight drop of exactly 2kg should NOT fire (must be >2kg)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for i in range(6):
         ts = (now - timedelta(minutes=50 - i * 10)).strftime(
             "%Y-%m-%dT%H:%M:%S.%f"
@@ -352,7 +353,7 @@ async def test_swarm_null_weight_skipped(engine, alert_engine, hive_with_reading
 # NO_DATA tests
 async def test_no_data_fires(engine, alert_engine):
     """Hive with stale last_seen_at should trigger NO_DATA."""
-    stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).strftime(
+    stale = (datetime.now(UTC) - timedelta(minutes=20)).strftime(
         "%Y-%m-%dT%H:%M:%S.%f"
     )[:-3] + "Z"
     async with AsyncSession(engine) as session:
@@ -385,7 +386,7 @@ async def test_no_data_null_last_seen_skipped(engine, alert_engine):
 
 async def test_no_data_cooldown_suppresses(engine, alert_engine):
     """NO_DATA should not fire twice within 60-minute cooldown."""
-    stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).strftime(
+    stale = (datetime.now(UTC) - timedelta(minutes=20)).strftime(
         "%Y-%m-%dT%H:%M:%S.%f"
     )[:-3] + "Z"
     async with AsyncSession(engine) as session:

@@ -8,7 +8,7 @@ Rules:
 - NO_DATA: No reading for >15min (medium, 60min cooldown)
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -79,7 +79,7 @@ class AlertEngine:
     async def check_no_data(self) -> list[dict]:
         """Check all hives for stale data. Called by scheduler every 60s."""
         alerts = []
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).strftime(
+        cutoff = (datetime.now(UTC) - timedelta(minutes=15)).strftime(
             "%Y-%m-%dT%H:%M:%S.%f"
         )[:-3] + "Z"
         async with AsyncSession(self.engine) as session:
@@ -144,7 +144,7 @@ class AlertEngine:
 
         # Anchor to reading's observed_at, NOT system clock
         reading_time = datetime.strptime(observed_at, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
-            tzinfo=timezone.utc
+            tzinfo=UTC
         )
         cutoff = (reading_time - timedelta(hours=1)).strftime(
             "%Y-%m-%dT%H:%M:%S.%f"
@@ -185,7 +185,7 @@ class AlertEngine:
     ) -> bool:
         """Check if an alert of this type was recently fired for this hive."""
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(minutes=cooldown_min)
+            datetime.now(UTC) - timedelta(minutes=cooldown_min)
         ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         result = await session.execute(
             select(Alert.id)

@@ -1,10 +1,8 @@
 """Tests for alerts endpoints."""
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from waggle.models import Alert, Hive
-from waggle.utils.timestamps import utc_now
+from waggle.models import Alert
 
 
 async def _create_hive_and_alerts(client, auth_headers, count=3):

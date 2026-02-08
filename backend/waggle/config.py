@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     DASHBOARD_AUTH_PASS: str | None = None
 
     @property
-    def DB_URL(self) -> str:
+    def DB_URL(self) -> str:  # noqa: N802
         return f"sqlite+aiosqlite:///{self.DB_PATH}"
 
     @model_validator(mode="after")

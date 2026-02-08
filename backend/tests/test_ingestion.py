@@ -1,15 +1,15 @@
 """Tests for worker ingestion service."""
 
-import time
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from waggle.database import create_engine_from_url, init_db
-from waggle.models import Hive, SensorReading, Alert
 from waggle.config import Settings
+from waggle.database import create_engine_from_url, init_db
+from waggle.models import Hive, SensorReading
 from waggle.services.alert_engine import AlertEngine
 from waggle.services.ingestion import IngestionService
 from waggle.utils.timestamps import utc_now
@@ -114,7 +114,7 @@ async def test_bad_timestamp(service, hive):
 
 
 async def test_future_timestamp(service, hive):
-    future = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime(
+    future = (datetime.now(UTC) + timedelta(hours=1)).strftime(
         "%Y-%m-%dT%H:%M:%S.%f"
     )[:-3] + "Z"
     result = await service.process_message(

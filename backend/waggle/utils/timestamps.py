@@ -1,11 +1,11 @@
 """Timestamp utilities for canonical ISO 8601 formatting and validation."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 
 def utc_now() -> str:
     """Return current UTC time as canonical ISO 8601 string: YYYY-MM-DDTHH:MM:SS.mmmZ"""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def validate_observed_at(observed_at: str, *, max_past_skew_hours: int = 72) -> bool:
@@ -18,12 +18,12 @@ def validate_observed_at(observed_at: str, *, max_past_skew_hours: int = 72) -> 
     """
     try:
         dt = datetime.strptime(observed_at, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
-            tzinfo=timezone.utc
+            tzinfo=UTC
         )
     except (ValueError, TypeError):
         return False
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Not in the future (small tolerance for clock skew)
     if dt > now + timedelta(seconds=30):
@@ -38,4 +38,4 @@ def validate_observed_at(observed_at: str, *, max_past_skew_hours: int = 72) -> 
 
 def is_system_time_valid(min_year: int = 2025) -> bool:
     """Check if system clock is set to a reasonable time."""
-    return datetime.now(timezone.utc).year >= min_year
+    return datetime.now(UTC).year >= min_year

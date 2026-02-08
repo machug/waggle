@@ -2,6 +2,7 @@
 
 import shutil
 import time
+from datetime import UTC
 
 from fastapi import APIRouter, Request
 from sqlalchemy import desc, func, select
@@ -9,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.models import Hive, SensorReading
 from waggle.schemas import HubStatusOut, ServiceHealth
-from waggle.utils.timestamps import utc_now
 
 _START_TIME = time.monotonic()
 
@@ -35,9 +35,9 @@ def create_router():
             hive_count = result.scalar_one()
 
             # Readings in last 24 hours
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime, timedelta
 
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
+            cutoff = (datetime.now(UTC) - timedelta(hours=24)).strftime(
                 "%Y-%m-%dT%H:%M:%S.%f"
             )[:-3] + "Z"
             result = await session.execute(

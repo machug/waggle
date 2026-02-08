@@ -1,11 +1,11 @@
 """SQLAlchemy ORM models for Waggle Phase 1."""
 
 from sqlalchemy import (
+    REAL,
     CheckConstraint,
     ForeignKey,
     Index,
     Integer,
-    REAL,
     Text,
     UniqueConstraint,
 )

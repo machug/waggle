@@ -3,7 +3,7 @@
 import logging
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -52,7 +52,7 @@ class IngestionService:
     async def warm_dedup_cache(self) -> None:
         """Populate dedup cache from recent DB readings on startup."""
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(seconds=DEDUP_TTL_SECONDS)
+            datetime.now(UTC) - timedelta(seconds=DEDUP_TTL_SECONDS)
         ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
         async with AsyncSession(self.engine) as session:

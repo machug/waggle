@@ -1,6 +1,5 @@
 """Tests for API key authentication dependency."""
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -41,6 +40,7 @@ def test_wrong_key():
 def test_constant_time_comparison():
     """Key comparison should use hmac.compare_digest (timing-safe)."""
     import inspect
+
     from waggle.auth import create_api_key_dependency
     source = inspect.getsource(create_api_key_dependency)
     assert "compare_digest" in source

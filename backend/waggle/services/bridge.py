@@ -1,7 +1,7 @@
 """Bridge service: processes raw COBS-encoded serial frames into MQTT-ready JSON dicts."""
 
-from waggle.utils.cobs import cobs_decode, CobsDecodeError
-from waggle.utils.payload import deserialize_payload, PayloadError
+from waggle.utils.cobs import CobsDecodeError, cobs_decode
+from waggle.utils.payload import PayloadError, deserialize_payload
 from waggle.utils.timestamps import utc_now
 
 _FRAME_LENGTH = 38  # 6 bytes MAC + 32 bytes payload

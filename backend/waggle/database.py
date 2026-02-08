@@ -1,6 +1,6 @@
 """Database engine creation with SQLite WAL mode and PRAGMA configuration."""
 
-from sqlalchemy import event, text
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import StaticPool
 

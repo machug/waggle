@@ -1,6 +1,5 @@
 """Tests for hives CRUD endpoints."""
 
-import pytest
 
 
 async def test_create_hive(client, auth_headers):

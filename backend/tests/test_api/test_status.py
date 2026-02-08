@@ -1,6 +1,5 @@
 """Tests for hub status endpoint."""
 
-import pytest
 
 
 async def test_status_no_auth_required(client):
@@ -43,7 +42,7 @@ async def test_status_with_data(client, auth_headers):
     """Status with data should reflect counts."""
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from waggle.models import Hive, SensorReading
+    from waggle.models import SensorReading
     from waggle.utils.timestamps import utc_now
 
     # Create a hive via the API

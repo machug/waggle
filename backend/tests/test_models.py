@@ -1,7 +1,6 @@
 """Tests for SQLAlchemy ORM models."""
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.database import create_engine_from_url, init_db

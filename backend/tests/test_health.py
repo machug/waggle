@@ -4,8 +4,6 @@ import json
 import os
 import time
 
-import pytest
-
 from waggle.health import (
     HeartbeatWriter,
     alerts_fired,
@@ -18,7 +16,6 @@ from waggle.health import (
     readings_ingested,
     serial_reconnects,
 )
-
 
 # ---------------------------------------------------------------------------
 # Prometheus metrics: verify they exist and have expected types/labels

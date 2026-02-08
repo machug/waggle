@@ -11,7 +11,7 @@ import json
 import os
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from prometheus_client import Counter, Histogram
@@ -97,7 +97,7 @@ class HeartbeatWriter:
         """
         self.heartbeat_dir.mkdir(parents=True, exist_ok=True)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "pid": os.getpid(),
             "uptime_sec": round(time.monotonic() - self._start_monotonic, 1),

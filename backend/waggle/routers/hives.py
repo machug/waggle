@@ -59,7 +59,10 @@ def create_router(verify_key):
             try:
                 await session.commit()
             except IntegrityError:
-                raise HTTPException(status_code=409, detail="Hive with this id or name already exists")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Hive with this id or name already exists",
+                )
             await session.refresh(hive)
             return _hive_out(hive)
 
@@ -218,7 +221,10 @@ def create_router(verify_key):
             try:
                 await session.commit()
             except IntegrityError:
-                raise HTTPException(status_code=409, detail="Conflict: duplicate name or sender_mac")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Conflict: duplicate name or sender_mac",
+                )
             await session.refresh(hive)
             return _hive_out(hive)
 
