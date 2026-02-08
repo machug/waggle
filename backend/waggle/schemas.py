@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 MAC_RE = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
+
+CanonicalTimestamp = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$",
+        min_length=24,
+        max_length=24,
+    ),
+]
 
 
 # --- Hives ---
@@ -77,6 +86,10 @@ class HiveOut(BaseModel):
     latest_reading: LatestReading | None = None
     latest_traffic: LatestTrafficOut | None = None
     activity_score_today: int | None = None
+    camera_node_id: str | None = None
+    latest_photo_at: str | None = None
+    latest_ml_status: str | None = None
+    varroa_ratio: float | None = None
 
 
 class HivesResponse(BaseModel):
@@ -194,14 +207,18 @@ class TrafficSummaryOut(BaseModel):
 class AlertOut(BaseModel):
     id: int
     hive_id: int
-    reading_id: int | None
     type: str
     severity: str
     message: str
+    observed_at: str
     acknowledged: bool
     acknowledged_at: str | None
     acknowledged_by: str | None
     created_at: str
+    notified_at: str | None = None
+    updated_at: str | None = None
+    source: str = "local"
+    details_json: str | None = None
 
 
 class AlertsResponse(BaseModel):
@@ -237,6 +254,204 @@ class HubStatusOut(BaseModel):
     traffic_readings_24h: int = 0
     phase2_nodes_active: int = 0
     stuck_lanes_total: int = 0
+    photos_24h: int = 0
+    ml_queue_depth: int = 0
+    detections_24h: int = 0
+    sync_pending_rows: int = 0
+    sync_pending_files: int = 0
+
+
+# --- Camera Nodes ---
+
+
+class CameraNodeCreate(BaseModel):
+    device_id: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9-]+$")
+    hive_id: int = Field(ge=1, le=250)
+    api_key: str = Field(min_length=32)
+
+
+class CameraNodeOut(BaseModel):
+    device_id: str
+    hive_id: int
+    created_at: str
+    last_seen_at: str | None = None
+
+
+# --- Photos ---
+
+
+class PhotoOutLocal(BaseModel):
+    """Photo response for Pi local API (local-mode dashboard)."""
+
+    id: int
+    hive_id: int
+    device_id: str
+    boot_id: int
+    captured_at: str
+    captured_at_source: Literal["device_ntp", "device_rtc", "ingested"]
+    sequence: int
+    local_image_url: str
+    local_image_expires_at: int
+    file_size_bytes: int
+    sha256: str
+    ml_status: Literal["pending", "processing", "completed", "failed"]
+    ml_processed_at: str | None = None
+    ml_attempts: int
+    ml_error: str | None = None
+
+
+class PhotoRowCloud(BaseModel):
+    """Photo data as stored in Supabase for cloud dashboard."""
+
+    id: int
+    hive_id: int
+    device_id: str
+    boot_id: int
+    captured_at: str
+    captured_at_source: Literal["device_ntp", "device_rtc", "ingested"]
+    sequence: int
+    supabase_path: str | None = None
+    file_size_bytes: int
+    sha256: str
+    ml_status: Literal["pending", "processing", "completed", "failed"]
+    ml_processed_at: str | None = None
+    ml_attempts: int
+    ml_error: str | None = None
+
+
+class PhotosResponse(BaseModel):
+    items: list[PhotoOutLocal]
+    total: int
+    limit: int
+    offset: int
+
+
+# --- Detections ---
+
+
+class DetectionOut(BaseModel):
+    id: int
+    photo_id: int
+    hive_id: int
+    detected_at: str
+    top_class: Literal["varroa", "pollen", "wasp", "bee", "normal"]
+    top_confidence: float
+    detections_json: list[dict]
+    varroa_count: int
+    pollen_count: int
+    wasp_count: int
+    bee_count: int
+    inference_ms: int
+    model_version: str
+    model_hash: str
+
+
+class DetectionsResponse(BaseModel):
+    items: list[DetectionOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class VarroaDailyOut(BaseModel):
+    date: str  # YYYY-MM-DD
+    total_mites: int
+    total_bees: int
+    mites_per_100_bees: float | None
+    photo_count: int
+
+
+class VarroaSummaryOut(BaseModel):
+    hive_id: int
+    hive_name: str | None = None
+    current_ratio: float | None
+    trend_7d: Literal["rising", "falling", "stable", "insufficient_data"]
+    trend_slope: float | None
+    days_since_treatment: int | None
+    treatment_threshold: float = 3.0
+
+
+# --- Inspections ---
+
+
+class InspectionIn(BaseModel):
+    uuid: str | None = None
+    hive_id: int = Field(ge=1, le=250)
+    inspected_at: str = Field(min_length=24, max_length=24)
+    queen_seen: bool = False
+    brood_pattern: Literal["good", "patchy", "poor"] | None = None
+    treatment_type: str | None = None
+    treatment_notes: str | None = None
+    notes: str | None = None
+
+
+class InspectionUpdate(BaseModel):
+    hive_id: int = Field(ge=1, le=250)
+    inspected_at: str = Field(min_length=24, max_length=24)
+    queen_seen: bool = False
+    brood_pattern: Literal["good", "patchy", "poor"] | None = None
+    treatment_type: str | None = None
+    treatment_notes: str | None = None
+    notes: str | None = None
+
+
+class InspectionOut(BaseModel):
+    uuid: str
+    hive_id: int
+    inspected_at: str
+    updated_at: str | None = None
+    queen_seen: bool
+    brood_pattern: Literal["good", "patchy", "poor"] | None
+    treatment_type: str | None
+    treatment_notes: str | None
+    notes: str | None
+    source: Literal["local", "cloud"]
+
+
+class InspectionsResponse(BaseModel):
+    items: list[InspectionOut]
+    total: int
+    limit: int
+    offset: int
+
+
+# --- Webhooks ---
+
+
+class WebhookPayload(BaseModel):
+    alert_id: int
+    type: str
+    severity: Literal["critical", "high", "medium", "low"]
+    hive_id: int
+    hive_name: str | None
+    message: str
+    observed_at: str
+    created_at: str
+    details: dict | None = None
+
+
+# --- Sync ---
+
+
+class SyncStatusOut(BaseModel):
+    last_push_at: str | None = None
+    last_pull_inspections_at: str | None = None
+    last_pull_alerts_at: str | None = None
+    pending_rows: int
+    pending_files: int
+
+
+# --- Weather ---
+
+
+class WeatherOut(BaseModel):
+    provider: str
+    temp_c: float | None = None
+    humidity_pct: float | None = None
+    description: str | None = None
+    icon: str | None = None
+    wind_speed_ms: float | None = None
+    fetched_at: str | None = None
 
 
 # --- Error ---

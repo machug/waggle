@@ -19,14 +19,28 @@ Pi Hub: Worker Service (Python)
     ▼
 SQLite (WAL mode)
     │
+    ├──▶ Pi Hub: REST API (FastAPI, http://127.0.0.1:8000)
+    │        │
+    │        ▼
+    │    SvelteKit Dashboard (http://pi-address:3000)
+    │        │ Server-side API proxy OR Supabase direct
+    │        ▼
+    │    Browser
+    │
+    ├──▶ Pi Hub: ML Worker (YOLOv8-nano inference)
+    │        │ Process photos → detect bees, varroa, wasps
+    │        ▼
+    │    Photo Storage (/var/lib/waggle/photos/)
+    │
+    └──▶ Pi Hub: Cloud Sync Service
+             │ Push readings/alerts/photos, pull inspections
+             ▼
+         Supabase (Postgres + Storage + Auth)
+
+ESP32-CAM Nodes (deep sleep, wake every 15min)
+    │ WiFi HTTP POST (multipart JPEG)
     ▼
-Pi Hub: REST API (FastAPI)
-    │ http://127.0.0.1:8000
-    ▼
-SvelteKit Dashboard
-    │ Server-side API proxy (hides API key)
-    ▼
-Browser (http://pi-address:3000)
+Pi Hub: REST API (/api/photos/upload)
 ```
 
 ## Components
@@ -39,6 +53,9 @@ Browser (http://pi-address:3000)
 | Worker service | Python 3.13 | `backend/waggle/services/ingestion.py` |
 | REST API | FastAPI + SQLAlchemy 2.0 async | `backend/waggle/` |
 | Dashboard | SvelteKit 2 + Tailwind CSS 4 | `dashboard/` |
+| Camera firmware | C++ / PlatformIO / Arduino | `firmware/camera-node/` |
+| ML worker | Python 3.13 + YOLOv8-nano | `backend/waggle/services/ml_worker.py` |
+| Cloud sync | Python 3.13 + Supabase | `backend/waggle/services/sync.py` |
 | Deployment | systemd + Mosquitto | `deploy/` |
 
 ## Quick Start (Development)
@@ -80,12 +97,20 @@ cd firmware/bridge
 pio run -t upload
 ```
 
+### Camera Firmware
+
+```bash
+cd firmware/camera-node
+# Edit src/config.h for your WiFi and API settings
+pio run -t upload
+```
+
 ## Pi Deployment
 
 ```bash
 sudo ./scripts/install.sh
 # Review /etc/waggle/.env
-sudo systemctl start waggle-bridge waggle-worker waggle-api
+sudo systemctl start waggle-bridge waggle-worker waggle-api waggle-ml waggle-sync
 ```
 
 See `deploy/` for systemd units and Mosquitto config.
@@ -109,6 +134,18 @@ All endpoints require `X-API-Key` header unless noted.
 | GET | `/api/hives/{id}/traffic/summary` | Yes | Traffic summary with activity score |
 | GET | `/api/alerts` | Yes | List alerts (filterable) |
 | PATCH | `/api/alerts/{id}/acknowledge` | Yes | Acknowledge alert |
+| POST | `/api/admin/camera-nodes` | Admin | Register camera node |
+| POST | `/api/photos/upload` | Admin | Upload photo from camera |
+| GET | `/api/photos/{id}/image` | Yes | Serve photo image |
+| GET | `/api/hives/{id}/photos` | Yes | List photos for hive |
+| GET | `/api/hives/{id}/detections` | Yes | ML detection results |
+| GET | `/api/hives/{id}/varroa` | Yes | Varroa mite load history |
+| GET | `/api/varroa/overview` | Yes | Cross-hive varroa summary |
+| POST | `/api/inspections` | Yes | Create inspection |
+| PUT | `/api/inspections/{uuid}` | Yes | Update inspection |
+| GET | `/api/hives/{id}/inspections` | Yes | List hive inspections |
+| GET | `/api/weather/current` | Yes | Weather conditions |
+| GET | `/api/sync/status` | Yes | Cloud sync status |
 
 ## Alert Rules
 
@@ -131,10 +168,19 @@ All endpoints require `X-API-Key` header unless noted.
 | ROBBING | High traffic AND net inflow AND weight loss | high | 4h |
 | LOW_ACTIVITY | Traffic <20% of 7-day average | medium | 24h |
 
+### Phase 3 (Vision -- requires ESP32-CAM + ML worker)
+
+| Type | Condition | Severity | Cooldown |
+|------|-----------|----------|----------|
+| VARROA_HIGH_LOAD | Mite load >3 per 100 bees | high | 24h |
+| VARROA_RISING | Mite load rising >50% over 7 days | medium | 48h |
+| QUEEN_MISSING | No queen detected in 14+ days | high | 72h |
+| PEST_DETECTED | Wasp/hornet detected in frame | medium | 4h |
+
 ## Testing
 
 ```bash
-# Backend (297 tests)
+# Backend (495 tests)
 cd backend && pytest tests/ -v
 
 # Firmware COBS tests
@@ -150,8 +196,8 @@ cd backend && ruff check .
 ## Project Phases
 
 - **Phase 1: Sensor Foundation** -- ESP32 nodes, Pi hub, REST API, dashboard
-- **Phase 2: Bee Counting** (current) -- IR beam-break sensors, traffic API, correlation alerts
-- **Phase 3: Vision Intelligence** -- ESP32-CAM, cloud sync, ML inference
+- **Phase 2: Bee Counting** -- IR beam-break sensors, traffic API, correlation alerts
+- **Phase 3: Vision Intelligence** (current) -- ESP32-CAM, ML inference, cloud sync, varroa tracking
 
 ## License
 

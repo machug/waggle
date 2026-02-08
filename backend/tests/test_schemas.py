@@ -5,15 +5,23 @@ from pydantic import ValidationError
 
 from waggle.schemas import (
     AlertAcknowledge,
+    AlertOut,
+    CameraNodeCreate,
+    DetectionOut,
     HiveCreate,
     HiveOut,
     HiveUpdate,
+    InspectionIn,
     LatestReading,
     LatestTrafficOut,
+    PhotoOutLocal,
+    SyncStatusOut,
     TrafficAggregateOut,
     TrafficRecordOut,
     TrafficResponse,
     TrafficSummaryOut,
+    VarroaSummaryOut,
+    WebhookPayload,
 )
 
 
@@ -298,3 +306,188 @@ class TestHiveOutTrafficFields:
         assert h.latest_traffic is not None
         assert h.latest_traffic.bees_in == 42
         assert h.activity_score_today == 72
+
+
+class TestCameraNodeCreate:
+    def test_valid(self):
+        c = CameraNodeCreate(device_id="cam-hive01-a", hive_id=1, api_key="a" * 32)
+        assert c.device_id == "cam-hive01-a"
+
+    def test_device_id_invalid_chars(self):
+        with pytest.raises(ValidationError):
+            CameraNodeCreate(device_id="cam hive", hive_id=1, api_key="a" * 32)
+
+    def test_api_key_too_short(self):
+        with pytest.raises(ValidationError):
+            CameraNodeCreate(device_id="cam-1", hive_id=1, api_key="short")
+
+
+class TestPhotoOutLocal:
+    def test_valid(self):
+        p = PhotoOutLocal(
+            id=1,
+            hive_id=1,
+            device_id="cam-1",
+            boot_id=5,
+            captured_at="2026-02-08T12:00:00.000Z",
+            captured_at_source="device_ntp",
+            sequence=1,
+            local_image_url="http://pi:8000/api/photos/1/image?token=abc&expires=9999",
+            local_image_expires_at=9999999999,
+            file_size_bytes=50000,
+            sha256="abc123",
+            ml_status="pending",
+            ml_attempts=0,
+        )
+        assert p.ml_status == "pending"
+
+    def test_invalid_ml_status(self):
+        with pytest.raises(ValidationError):
+            PhotoOutLocal(
+                id=1,
+                hive_id=1,
+                device_id="cam-1",
+                boot_id=5,
+                captured_at="2026-02-08T12:00:00.000Z",
+                captured_at_source="device_ntp",
+                sequence=1,
+                local_image_url="http://pi:8000/api/photos/1/image",
+                local_image_expires_at=9999999999,
+                file_size_bytes=50000,
+                sha256="abc123",
+                ml_status="unknown",
+                ml_attempts=0,
+            )
+
+
+class TestDetectionOut:
+    def test_valid(self):
+        d = DetectionOut(
+            id=1,
+            photo_id=1,
+            hive_id=1,
+            detected_at="2026-02-08T12:00:00.000Z",
+            top_class="varroa",
+            top_confidence=0.95,
+            detections_json=[
+                {"class": "varroa", "confidence": 0.95, "bbox": [10, 20, 30, 40]}
+            ],
+            varroa_count=3,
+            pollen_count=0,
+            wasp_count=0,
+            bee_count=12,
+            inference_ms=150,
+            model_version="yolov8n-waggle-v1",
+            model_hash="abc123",
+        )
+        assert d.top_class == "varroa"
+
+    def test_invalid_class(self):
+        with pytest.raises(ValidationError):
+            DetectionOut(
+                id=1,
+                photo_id=1,
+                hive_id=1,
+                detected_at="2026-02-08T12:00:00.000Z",
+                top_class="unknown_class",
+                top_confidence=0.5,
+                detections_json=[],
+                varroa_count=0,
+                pollen_count=0,
+                wasp_count=0,
+                bee_count=0,
+                inference_ms=100,
+                model_version="v1",
+                model_hash="abc",
+            )
+
+
+class TestVarroaSummaryOut:
+    def test_valid(self):
+        v = VarroaSummaryOut(
+            hive_id=1,
+            current_ratio=2.5,
+            trend_7d="rising",
+            trend_slope=0.3,
+            days_since_treatment=14,
+        )
+        assert v.treatment_threshold == 3.0
+
+    def test_insufficient_data(self):
+        v = VarroaSummaryOut(
+            hive_id=1,
+            current_ratio=None,
+            trend_7d="insufficient_data",
+            trend_slope=None,
+            days_since_treatment=None,
+        )
+        assert v.trend_7d == "insufficient_data"
+
+
+class TestInspectionIn:
+    def test_valid(self):
+        i = InspectionIn(
+            hive_id=1,
+            inspected_at="2026-02-08T12:00:00.000Z",
+            queen_seen=True,
+            brood_pattern="good",
+        )
+        assert i.queen_seen is True
+        assert i.uuid is None
+
+    def test_defaults(self):
+        i = InspectionIn(hive_id=1, inspected_at="2026-02-08T12:00:00.000Z")
+        assert i.queen_seen is False
+        assert i.brood_pattern is None
+
+    def test_invalid_brood_pattern(self):
+        with pytest.raises(ValidationError):
+            InspectionIn(
+                hive_id=1,
+                inspected_at="2026-02-08T12:00:00.000Z",
+                brood_pattern="excellent",
+            )
+
+
+class TestWebhookPayload:
+    def test_valid(self):
+        w = WebhookPayload(
+            alert_id=1,
+            type="VARROA_DETECTED",
+            severity="high",
+            hive_id=1,
+            hive_name="Hive Alpha",
+            message="Varroa mites detected",
+            observed_at="2026-02-08T12:00:00.000Z",
+            created_at="2026-02-08T12:00:01.000Z",
+        )
+        assert w.details is None
+
+
+class TestSyncStatusOut:
+    def test_valid(self):
+        s = SyncStatusOut(pending_rows=42, pending_files=7)
+        assert s.last_push_at is None
+        assert s.pending_rows == 42
+
+
+class TestAlertOutPhase3:
+    def test_phase3_fields(self):
+        a = AlertOut(
+            id=1,
+            hive_id=1,
+            type="VARROA_DETECTED",
+            severity="high",
+            message="Mites detected",
+            observed_at="2026-02-08T12:00:00.000Z",
+            acknowledged=False,
+            acknowledged_at=None,
+            acknowledged_by=None,
+            created_at="2026-02-08T12:00:01.000Z",
+            notified_at="2026-02-08T12:00:02.000Z",
+            updated_at="2026-02-08T12:00:01.000Z",
+            source="local",
+            details_json='{"varroa_count": 5}',
+        )
+        assert a.source == "local"
+        assert a.observed_at == "2026-02-08T12:00:00.000Z"

@@ -21,6 +21,7 @@ from waggle.health import (
 # Prometheus metrics: verify they exist and have expected types/labels
 # ---------------------------------------------------------------------------
 
+
 class TestPrometheusMetrics:
     """Verify that Prometheus metric singletons are correctly defined."""
 
@@ -55,6 +56,7 @@ class TestPrometheusMetrics:
 # ---------------------------------------------------------------------------
 # HeartbeatWriter.write_heartbeat
 # ---------------------------------------------------------------------------
+
 
 class TestHeartbeatWriter:
     """Tests for atomic heartbeat file writing."""
@@ -150,6 +152,7 @@ class TestHeartbeatWriter:
 # HeartbeatWriter.read_heartbeat
 # ---------------------------------------------------------------------------
 
+
 class TestReadHeartbeat:
     """Tests for the static heartbeat reader."""
 
@@ -178,6 +181,7 @@ class TestReadHeartbeat:
 # ---------------------------------------------------------------------------
 # check_service_health
 # ---------------------------------------------------------------------------
+
 
 class TestCheckServiceHealth:
     """Tests for the service health status function."""
@@ -241,6 +245,7 @@ class TestCheckServiceHealth:
 def test_traffic_ingested_counter():
     """traffic_ingested counter is registered and incrementable."""
     from waggle.health import traffic_ingested
+
     before = traffic_ingested.labels(hive_id="1")._value.get()
     traffic_ingested.labels(hive_id="1").inc()
     after = traffic_ingested.labels(hive_id="1")._value.get()
@@ -250,6 +255,7 @@ def test_traffic_ingested_counter():
 def test_traffic_dropped_counter():
     """traffic_dropped counter is registered and incrementable."""
     from waggle.health import traffic_dropped
+
     before = traffic_dropped.labels(reason="validation")._value.get()
     traffic_dropped.labels(reason="validation").inc()
     after = traffic_dropped.labels(reason="validation")._value.get()
@@ -259,6 +265,7 @@ def test_traffic_dropped_counter():
 def test_correlation_alerts_counter():
     """correlation_alerts_fired counter is registered and incrementable."""
     from waggle.health import correlation_alerts_fired
+
     before = correlation_alerts_fired.labels(type="POSSIBLE_SWARM")._value.get()
     correlation_alerts_fired.labels(type="POSSIBLE_SWARM").inc()
     after = correlation_alerts_fired.labels(type="POSSIBLE_SWARM")._value.get()
@@ -268,6 +275,116 @@ def test_correlation_alerts_counter():
 def test_stuck_lanes_gauge():
     """stuck_lanes_current gauge is registered and settable."""
     from waggle.health import stuck_lanes_current
+
     stuck_lanes_current.labels(hive_id="1").set(2)
     assert stuck_lanes_current.labels(hive_id="1")._value.get() == 2
     stuck_lanes_current.labels(hive_id="1").set(0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 metrics
+# ---------------------------------------------------------------------------
+
+
+def test_photos_received_counter():
+    from waggle.health import photos_received
+
+    before = photos_received.labels(hive_id="1", device_id="cam-01")._value.get()
+    photos_received.labels(hive_id="1", device_id="cam-01").inc()
+    after = photos_received.labels(hive_id="1", device_id="cam-01")._value.get()
+    assert after == before + 1
+
+
+def test_ml_inference_duration_histogram():
+    from waggle.health import ml_inference_duration
+
+    assert ml_inference_duration._type == "histogram"
+    assert ml_inference_duration._labelnames == ("hive_id",)
+
+
+def test_ml_detections_counter():
+    from waggle.health import ml_detections
+
+    before = ml_detections.labels(hive_id="1", class_name="bee")._value.get()
+    ml_detections.labels(hive_id="1", class_name="bee").inc()
+    after = ml_detections.labels(hive_id="1", class_name="bee")._value.get()
+    assert after == before + 1
+
+
+def test_ml_queue_depth_gauge():
+    from waggle.health import ml_queue_depth
+
+    ml_queue_depth.set(5)
+    assert ml_queue_depth._value.get() == 5
+    ml_queue_depth.set(0)
+
+
+def test_sync_push_rows_counter():
+    from waggle.health import sync_push_rows
+
+    before = sync_push_rows.labels(table="photos")._value.get()
+    sync_push_rows.labels(table="photos").inc()
+    after = sync_push_rows.labels(table="photos")._value.get()
+    assert after == before + 1
+
+
+def test_sync_pull_rows_counter():
+    from waggle.health import sync_pull_rows
+
+    before = sync_pull_rows.labels(table="inspections")._value.get()
+    sync_pull_rows.labels(table="inspections").inc()
+    after = sync_pull_rows.labels(table="inspections")._value.get()
+    assert after == before + 1
+
+
+def test_sync_push_files_counter():
+    from waggle.health import sync_push_files
+
+    before = sync_push_files._value.get()
+    sync_push_files.inc()
+    after = sync_push_files._value.get()
+    assert after == before + 1
+
+
+def test_sync_pull_files_counter():
+    from waggle.health import sync_pull_files
+
+    before = sync_pull_files._value.get()
+    sync_pull_files.inc()
+    after = sync_pull_files._value.get()
+    assert after == before + 1
+
+
+def test_webhook_delivery_success_counter():
+    from waggle.health import webhook_delivery_success
+
+    before = webhook_delivery_success.labels(url="http://example.com")._value.get()
+    webhook_delivery_success.labels(url="http://example.com").inc()
+    after = webhook_delivery_success.labels(url="http://example.com")._value.get()
+    assert after == before + 1
+
+
+def test_webhook_delivery_failure_counter():
+    from waggle.health import webhook_delivery_failure
+
+    before = webhook_delivery_failure.labels(url="http://example.com")._value.get()
+    webhook_delivery_failure.labels(url="http://example.com").inc()
+    after = webhook_delivery_failure.labels(url="http://example.com")._value.get()
+    assert after == before + 1
+
+
+def test_disk_usage_bytes_gauge():
+    from waggle.health import disk_usage_bytes
+
+    disk_usage_bytes.set(1024000)
+    assert disk_usage_bytes._value.get() == 1024000
+    disk_usage_bytes.set(0)
+
+
+def test_photo_pruned_counter():
+    from waggle.health import photo_pruned
+
+    before = photo_pruned._value.get()
+    photo_pruned.inc()
+    after = photo_pruned._value.get()
+    assert after == before + 1

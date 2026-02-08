@@ -223,7 +223,7 @@ async def test_traffic_fields_passed_to_alert_engine(service, hive, engine):
 
         mock_check.assert_called_once()
         call_args = mock_check.call_args
-        converted = call_args[0][2]  # Third positional arg is the converted dict
+        converted = call_args[0][1]  # Second positional arg is the converted dict
 
         assert converted["bees_in"] == 100
         assert converted["bees_out"] == 150

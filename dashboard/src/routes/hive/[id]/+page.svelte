@@ -7,6 +7,8 @@
 	import TrafficChart from '$lib/components/TrafficChart.svelte';
 	import DailySummaryChart from '$lib/components/DailySummaryChart.svelte';
 	import ActivityHeatmap from '$lib/components/ActivityHeatmap.svelte';
+	import PhotoFeed from '$lib/components/PhotoFeed.svelte';
+	import VarroaChart from '$lib/components/VarroaChart.svelte';
 	import { startPolling } from '$lib/stores/polling';
 	import { page } from '$app/state';
 
@@ -22,6 +24,9 @@
 	const trafficHourly = $derived(data.trafficHourly ?? []);
 	const trafficHeatmap = $derived(data.trafficHeatmap ?? []);
 	const trafficSummary = $derived(data.trafficSummary);
+	const photos = $derived(data.photos ?? []);
+	const photoDetections = $derived(data.photoDetections ?? []);
+	const varroaData = $derived(data.varroaData ?? []);
 
 	// The most recent reading for stats display
 	const latestReading = $derived(readings.length > 0 ? readings[readings.length - 1] : null);
@@ -141,6 +146,24 @@
 		{:else}
 			<div class="bg-white rounded-lg shadow p-6 text-center text-gray-400 text-sm mb-6">
 				No traffic data available. Phase 2 sensor required.
+			</div>
+		{/if}
+
+		<!-- Photos section (Phase 3) -->
+		<div class="mb-6">
+			<h2 class="text-lg font-semibold text-amber-900 mb-3">Photos</h2>
+			<PhotoFeed {photos} detections={photoDetections} />
+		</div>
+
+		<!-- Varroa mite load section (Phase 3) -->
+		{#if varroaData.length > 0}
+			<div class="mb-6">
+				<h2 class="text-lg font-semibold text-amber-900 mb-3">Varroa Mite Load</h2>
+				<VarroaChart data={varroaData} hiveName={hive?.name} />
+			</div>
+		{:else}
+			<div class="bg-white rounded-lg shadow p-6 text-center text-gray-400 text-sm mb-6">
+				No varroa data available. Phase 3 vision analysis required.
 			</div>
 		{/if}
 

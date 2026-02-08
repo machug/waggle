@@ -7,7 +7,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from waggle.auth import create_api_key_dependency, install_auth_error_handler
+from waggle.auth import (
+    create_admin_key_dependency,
+    create_api_key_dependency,
+    install_auth_error_handler,
+)
 from waggle.database import create_engine_from_url, init_db
 
 
@@ -28,9 +32,10 @@ def create_app(
     *,
     db_url: str = "",
     api_key: str = "",
+    admin_api_key: str = "",
+    settings: object | None = None,
     is_worker: bool = False,
 ) -> FastAPI:
-
     engine = create_engine_from_url(db_url, is_worker=is_worker) if db_url else None
 
     @asynccontextmanager
@@ -45,7 +50,9 @@ def create_app(
     app = FastAPI(lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.engine = engine
     app.state.api_key = api_key
+    app.state.settings = settings
     verify_key = create_api_key_dependency(api_key)
+    verify_admin = create_admin_key_dependency(admin_api_key)
 
     # Install auth error handler from auth module
     install_auth_error_handler(app)
@@ -78,12 +85,34 @@ def create_app(
         )
 
     # Register routers (imported here to avoid circular imports)
-    from waggle.routers import alerts, hives, readings, status, traffic
+    from waggle.routers import (
+        admin,
+        alerts,
+        detections,
+        hives,
+        inspections,
+        photos,
+        readings,
+        status,
+        sync,
+        traffic,
+        varroa,
+        weather,
+    )
 
     app.include_router(hives.create_router(verify_key), prefix="/api")
     app.include_router(readings.create_router(verify_key), prefix="/api")
     app.include_router(alerts.create_router(verify_key), prefix="/api")
     app.include_router(status.create_router(), prefix="/api")
     app.include_router(traffic.create_router(verify_key), prefix="/api")
+
+    # Phase 3 routers
+    app.include_router(admin.create_router(verify_admin), prefix="/api")
+    app.include_router(photos.create_router(verify_key), prefix="/api")
+    app.include_router(detections.create_router(verify_key), prefix="/api")
+    app.include_router(varroa.create_router(verify_key), prefix="/api")
+    app.include_router(inspections.create_router(verify_key), prefix="/api")
+    app.include_router(weather.create_router(verify_key), prefix="/api")
+    app.include_router(sync.create_router(verify_key), prefix="/api")
 
     return app

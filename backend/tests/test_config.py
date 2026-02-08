@@ -1,5 +1,8 @@
 """Tests for configuration loading."""
 
+import pytest
+from pydantic import ValidationError
+
 from waggle.config import Settings
 
 
@@ -30,13 +33,46 @@ def test_settings_db_url():
 
 def test_settings_trust_proxy_requires_localhost():
     """When TRUST_PROXY=true, API_HOST must be 127.0.0.1."""
-    import pytest
     with pytest.raises(ValueError, match="TRUST_PROXY.*127.0.0.1"):
         Settings(API_KEY="test-key-123", TRUST_PROXY=True, API_HOST="0.0.0.0", _env_file=None)
 
 
 def test_settings_api_key_required():
     """API_KEY is required."""
-    import pytest
     with pytest.raises(Exception):
         Settings(_env_file=None)
+
+
+def test_phase3_config_defaults():
+    """Phase 3 config fields have correct defaults."""
+    s = Settings(API_KEY="test", _env_file=None)
+    assert s.MAX_QUEUE_DEPTH == 50
+    assert s.DISK_USAGE_THRESHOLD == 0.90
+    assert s.MAX_PHOTO_SIZE == 204800
+    assert s.PHOTO_DIR == "/var/lib/waggle/photos"
+    assert s.PHOTO_RETENTION_DAYS == 30
+    assert s.DETECTION_CONFIDENCE_THRESHOLD == 0.25
+    assert s.WEBHOOK_URLS == []
+    assert s.WEBHOOK_SECRET == ""
+    assert s.WEATHER_PROVIDER == "none"
+    assert s.LOCAL_SIGNING_TTL_SEC == 600
+    assert s.FASTAPI_BASE_URL == "http://localhost:8000"
+    assert s.SYNC_INTERVAL_SEC == 300
+
+
+def test_weather_provider_owm_alias():
+    """WEATHER_PROVIDER 'owm' normalizes to 'openweathermap'."""
+    s = Settings(API_KEY="test", WEATHER_PROVIDER="owm", _env_file=None)
+    assert s.WEATHER_PROVIDER == "openweathermap"
+
+
+def test_weather_provider_invalid():
+    """Invalid WEATHER_PROVIDER raises validation error."""
+    with pytest.raises(ValidationError):
+        Settings(API_KEY="test", WEATHER_PROVIDER="invalid", _env_file=None)
+
+
+def test_webhook_urls_parsing():
+    """WEBHOOK_URLS parses comma-separated string."""
+    s = Settings(API_KEY="test", WEBHOOK_URLS="https://a.com,https://b.com", _env_file=None)
+    assert s.WEBHOOK_URLS == ["https://a.com", "https://b.com"]

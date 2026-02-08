@@ -8,7 +8,16 @@ from fastapi import APIRouter, Request
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from waggle.models import BeeCount, Hive, SensorReading
+from waggle.models import (
+    Alert,
+    BeeCount,
+    CameraNode,
+    Hive,
+    Inspection,
+    MlDetection,
+    Photo,
+    SensorReading,
+)
 from waggle.schemas import HubStatusOut, ServiceHealth
 
 _START_TIME = time.monotonic()
@@ -80,6 +89,58 @@ def create_router():
             )
             stuck_lanes_total = result.scalar()
 
+            # Photos in last 24h
+            result = await session.execute(
+                select(func.count())
+                .select_from(Photo)
+                .where(Photo.ingested_at >= cutoff)
+            )
+            photos_24h = result.scalar_one()
+
+            # ML queue depth (pending + processing)
+            result = await session.execute(
+                select(func.count())
+                .select_from(Photo)
+                .where(Photo.ml_status.in_(["pending", "processing"]))
+            )
+            ml_queue_depth = result.scalar_one()
+
+            # Detections in last 24h
+            result = await session.execute(
+                select(func.count())
+                .select_from(MlDetection)
+                .where(MlDetection.detected_at >= cutoff)
+            )
+            detections_24h = result.scalar_one()
+
+            # Sync pending rows (count row_synced=0 across all synced tables)
+            tables_with_sync = [
+                Hive,
+                SensorReading,
+                BeeCount,
+                Photo,
+                MlDetection,
+                CameraNode,
+                Inspection,
+                Alert,
+            ]
+            sync_pending_rows = 0
+            for model in tables_with_sync:
+                r = await session.execute(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.row_synced == 0)
+                )
+                sync_pending_rows += r.scalar_one()
+
+            # Sync pending files
+            result = await session.execute(
+                select(func.count())
+                .select_from(Photo)
+                .where(Photo.file_synced == 0)
+            )
+            sync_pending_files = result.scalar_one()
+
         # Uptime
         uptime_sec = int(time.monotonic() - _START_TIME)
 
@@ -109,6 +170,11 @@ def create_router():
             traffic_readings_24h=traffic_readings_24h,
             phase2_nodes_active=phase2_nodes_active,
             stuck_lanes_total=stuck_lanes_total,
+            photos_24h=photos_24h,
+            ml_queue_depth=ml_queue_depth,
+            detections_24h=detections_24h,
+            sync_pending_rows=sync_pending_rows,
+            sync_pending_files=sync_pending_files,
         )
 
     return router

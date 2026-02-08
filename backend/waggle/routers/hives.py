@@ -7,7 +7,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from waggle.models import BeeCount, Hive, SensorReading
+from waggle.models import BeeCount, CameraNode, Hive, MlDetection, Photo, SensorReading
 from waggle.schemas import (
     HiveCreate,
     HiveOut,
@@ -24,6 +24,11 @@ def _hive_out(
     latest: LatestReading | None = None,
     latest_traffic: LatestTrafficOut | None = None,
     activity_score_today: int | None = None,
+    *,
+    camera_node_id: str | None = None,
+    latest_photo_at: str | None = None,
+    latest_ml_status: str | None = None,
+    varroa_ratio: float | None = None,
 ) -> HiveOut:
     """Convert a Hive ORM instance to a HiveOut schema."""
     return HiveOut(
@@ -37,6 +42,10 @@ def _hive_out(
         latest_reading=latest,
         latest_traffic=latest_traffic,
         activity_score_today=activity_score_today,
+        camera_node_id=camera_node_id,
+        latest_photo_at=latest_photo_at,
+        latest_ml_status=latest_ml_status,
+        varroa_ratio=varroa_ratio,
     )
 
 
@@ -155,6 +164,93 @@ async def _compute_activity_scores(session, hive_ids: list[int]) -> dict[int, in
     return scores
 
 
+async def _fetch_phase3_data(
+    session: AsyncSession, hive_ids: list[int],
+) -> dict[int, dict]:
+    """Fetch camera_node_id, latest photo, and varroa ratio for hive IDs.
+
+    Returns a dict mapping hive_id -> {camera_node_id, latest_photo_at,
+    latest_ml_status, varroa_ratio}.
+    """
+    if not hive_ids:
+        return {}
+
+    result: dict[int, dict] = {
+        hid: {
+            "camera_node_id": None,
+            "latest_photo_at": None,
+            "latest_ml_status": None,
+            "varroa_ratio": None,
+        }
+        for hid in hive_ids
+    }
+
+    # Camera node per hive (first registered = min device_id)
+    cam_stmt = (
+        select(CameraNode.hive_id, func.min(CameraNode.device_id).label("device_id"))
+        .where(CameraNode.hive_id.in_(hive_ids))
+        .group_by(CameraNode.hive_id)
+    )
+    cam_rows = (await session.execute(cam_stmt)).all()
+    for row in cam_rows:
+        result[row[0]]["camera_node_id"] = row[1]
+
+    # Latest photo per hive (via row_number window)
+    photo_subq = (
+        select(
+            Photo.hive_id,
+            Photo.captured_at.label("p_captured_at"),
+            Photo.ml_status.label("p_ml_status"),
+            func.row_number()
+            .over(
+                partition_by=Photo.hive_id,
+                order_by=desc(Photo.captured_at),
+            )
+            .label("p_rn"),
+        )
+        .where(Photo.hive_id.in_(hive_ids))
+        .subquery()
+    )
+    photo_stmt = (
+        select(
+            photo_subq.c.hive_id,
+            photo_subq.c.p_captured_at,
+            photo_subq.c.p_ml_status,
+        )
+        .where(photo_subq.c.p_rn == 1)
+    )
+    photo_rows = (await session.execute(photo_stmt)).all()
+    for row in photo_rows:
+        result[row[0]]["latest_photo_at"] = row[1]
+        result[row[0]]["latest_ml_status"] = row[2]
+
+    # Varroa ratio: mites per 100 bees from detections in the last 24 hours
+    cutoff = (datetime.now(UTC) - timedelta(hours=24)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z"
+    )
+    varroa_stmt = (
+        select(
+            MlDetection.hive_id,
+            (
+                func.sum(MlDetection.varroa_count)
+                * 100.0
+                / func.nullif(func.sum(MlDetection.bee_count), 0)
+            ).label("ratio"),
+        )
+        .where(
+            MlDetection.hive_id.in_(hive_ids),
+            MlDetection.detected_at >= cutoff,
+        )
+        .group_by(MlDetection.hive_id)
+    )
+    varroa_rows = (await session.execute(varroa_stmt)).all()
+    for row in varroa_rows:
+        if row[1] is not None:
+            result[row[0]]["varroa_ratio"] = round(row[1], 2)
+
+    return result
+
+
 def create_router(verify_key):
     router = APIRouter(tags=["hives"], dependencies=[verify_key])
 
@@ -251,9 +347,10 @@ def create_router(verify_key):
             result = await session.execute(stmt)
             rows = result.all()
 
-            # Collect hive IDs for activity score computation
+            # Collect hive IDs for activity score and Phase 3 data
             hive_ids = [row[0].id for row in rows]
             activity_scores = await _compute_activity_scores(session, hive_ids)
+            p3_data = await _fetch_phase3_data(session, hive_ids)
 
             items = []
             for row in rows:
@@ -271,8 +368,13 @@ def create_router(verify_key):
                 r.flags = row[7]
                 latest = _latest_reading_from_row(r)
                 traffic = _latest_traffic_from_row(row[8], row[9], row[10], row[11], row[12])
+                p3 = p3_data.get(hive.id, {})
                 items.append(_hive_out(
                     hive, latest, traffic, activity_scores.get(hive.id),
+                    camera_node_id=p3.get("camera_node_id"),
+                    latest_photo_at=p3.get("latest_photo_at"),
+                    latest_ml_status=p3.get("latest_ml_status"),
+                    varroa_ratio=p3.get("varroa_ratio"),
                 ))
 
             return HivesResponse(items=items, total=total, limit=limit, offset=offset)
@@ -351,7 +453,15 @@ def create_router(verify_key):
             latest = _latest_reading_from_row(r)
             traffic = _latest_traffic_from_row(row[8], row[9], row[10], row[11], row[12])
             activity_scores = await _compute_activity_scores(session, [hive_id])
-            return _hive_out(hive, latest, traffic, activity_scores.get(hive_id))
+            p3_data = await _fetch_phase3_data(session, [hive_id])
+            p3 = p3_data.get(hive_id, {})
+            return _hive_out(
+                hive, latest, traffic, activity_scores.get(hive_id),
+                camera_node_id=p3.get("camera_node_id"),
+                latest_photo_at=p3.get("latest_photo_at"),
+                latest_ml_status=p3.get("latest_ml_status"),
+                varroa_ratio=p3.get("varroa_ratio"),
+            )
 
     @router.patch("/hives/{hive_id}", response_model=HiveOut)
     async def patch_hive(hive_id: int, body: HiveUpdate, request: Request):

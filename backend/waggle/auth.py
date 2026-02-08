@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
 _header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_admin_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 
 
 class AuthenticationError(Exception):
@@ -49,3 +50,22 @@ def create_api_key_dependency(expected_key: str):
         return api_key
 
     return Depends(verify_api_key)
+
+
+def create_admin_key_dependency(expected_key: str | None):
+    """Create a FastAPI dependency that validates the X-Admin-Key header.
+
+    If expected_key is None or empty, all requests are rejected (admin
+    endpoints disabled).
+    """
+
+    async def verify_admin_key(
+        admin_key: str | None = Security(_admin_header),
+    ):
+        if not expected_key:
+            raise AuthenticationError("Admin endpoints are not configured")
+        if admin_key is None or not hmac.compare_digest(admin_key, expected_key):
+            raise AuthenticationError("Missing or invalid admin key")
+        return admin_key
+
+    return Depends(verify_admin_key)

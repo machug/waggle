@@ -13,12 +13,15 @@ async def _create_hive_and_alerts(client, auth_headers, count=3):
         for i in range(count):
             alert_types = ["HIGH_TEMP", "LOW_TEMP", "LOW_BATTERY"]
             severities = ["high", "medium", "low"]
+            ts = f"2026-02-07T{10+i:02d}:00:00.000Z"
             alert = Alert(
                 hive_id=1,
                 type=alert_types[i % 3],
                 severity=severities[i % 3],
                 message=f"Test alert {i}",
-                created_at=f"2026-02-07T{10+i:02d}:00:00.000Z",
+                observed_at=ts,
+                created_at=ts,
+                updated_at=ts,
             )
             session.add(alert)
         await session.commit()

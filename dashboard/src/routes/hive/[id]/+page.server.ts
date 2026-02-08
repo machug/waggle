@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	const preset = INTERVAL_MAP[range] ?? INTERVAL_MAP['7d'];
 
 	try {
-		const [hive, readings, alerts, trafficHourly, trafficHeatmap, trafficSummary] = await Promise.all([
+		const [hive, readings, alerts, trafficHourly, trafficHeatmap, trafficSummary, photos, photoDetections, varroaData] = await Promise.all([
 			apiGet<any>(`/api/hives/${hiveId}`),
 			apiGet<any>(
 				`/api/hives/${hiveId}/readings?interval=${preset.interval}&limit=${preset.limit}`
@@ -28,6 +28,12 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			apiGet<any>(`/api/hives/${hiveId}/traffic?interval=hourly&limit=168&order=asc`).catch(() => ({ items: [] })),
 			// Traffic: daily summary
 			apiGet<any>(`/api/hives/${hiveId}/traffic/summary`).catch(() => null),
+			// Photos: recent photos for this hive
+			apiGet<any>(`/api/hives/${hiveId}/photos?limit=30&order=desc`).catch(() => ({ items: [] })),
+			// Detections: all detections for this hive's photos
+			apiGet<any>(`/api/hives/${hiveId}/photos/detections?limit=500`).catch(() => ({ items: [] })),
+			// Varroa: daily mite load for last 90 days (chart supports 30/60/90 toggle)
+			apiGet<any>(`/api/hives/${hiveId}/varroa?days=90`).catch(() => ({ items: [] })),
 		]);
 
 		return {
@@ -39,6 +45,9 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			trafficHourly: trafficHourly.items ?? [],
 			trafficHeatmap: trafficHeatmap.items ?? [],
 			trafficSummary,
+			photos: photos.items ?? [],
+			photoDetections: photoDetections.items ?? [],
+			varroaData: varroaData.items ?? [],
 		};
 	} catch (err: any) {
 		if (err?.message?.includes('404')) {

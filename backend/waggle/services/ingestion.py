@@ -310,7 +310,7 @@ class IngestionService:
             converted["stuck_mask"] = payload.get("stuck_mask")
 
         # 16. Trigger alert engine
-        await self.alert_engine.check_reading(hive_id, reading_id, converted)
+        await self.alert_engine.check_reading(hive_id, converted)
 
         return True
 
