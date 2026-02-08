@@ -1,5 +1,7 @@
 """Tests for cloud sync push service."""
 
+import hashlib
+import os
 import uuid
 
 import bcrypt
@@ -18,7 +20,7 @@ from waggle.models import (
     Photo,
     SensorReading,
 )
-from waggle.services.sync import PUSH_ORDER, push_rows
+from waggle.services.sync import PUSH_ORDER, push_files, push_rows
 from waggle.utils.timestamps import utc_now
 
 # ---------------------------------------------------------------------------
@@ -43,6 +45,29 @@ class MockSupabaseTable:
         return type("Response", (), {"data": self.upserted, "count": len(self.upserted)})()
 
 
+class MockStorageBucket:
+    def __init__(self, fail=False):
+        self.uploads = []
+        self._fail = fail
+
+    def upload(self, path, data, file_options=None):
+        if self._fail:
+            raise Exception("Storage upload error")
+        self.uploads.append({"path": path, "data": data, "options": file_options})
+        return {"Key": path}
+
+
+class MockStorage:
+    def __init__(self, fail=False):
+        self.buckets = {}
+        self._fail = fail
+
+    def from_(self, bucket_name):
+        if bucket_name not in self.buckets:
+            self.buckets[bucket_name] = MockStorageBucket(fail=self._fail)
+        return self.buckets[bucket_name]
+
+
 class MockSupabaseClient:
     """Mock Supabase client for testing."""
 
@@ -52,6 +77,7 @@ class MockSupabaseClient:
         self._fail_tables = fail_tables or []
         # Track table access order for FK order test
         self.table_access_order = []
+        self.storage = MockStorage()
 
     def table(self, name):
         self.table_access_order.append(name)
@@ -362,3 +388,178 @@ async def test_push_boolean_conversion(sync_engine):
     assert upserted_alert["acknowledged"] is True
     # Verify row_synced and file_synced are NOT in the dict
     assert "row_synced" not in upserted_alert
+
+
+# ---------------------------------------------------------------------------
+# Helpers for file sync tests
+# ---------------------------------------------------------------------------
+
+# JPEG magic bytes (SOI marker)
+JPEG_MAGIC = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+
+
+def _create_photo_file(photo_dir, relative_path, content=None):
+    """Create a photo file on disk and return (content, sha256)."""
+    if content is None:
+        content = JPEG_MAGIC
+    full_path = os.path.join(photo_dir, relative_path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    with open(full_path, "wb") as f:
+        f.write(content)
+    sha = hashlib.sha256(content).hexdigest()
+    return content, sha
+
+
+async def _seed_photo_for_file_sync(
+    engine,
+    hive_id=1,
+    device_id="cam-01",
+    ml_status="completed",
+    file_synced=0,
+    sha256="a" * 64,
+    photo_path="1/2026-01-01/cam-01_1_1.jpg",
+):
+    """Create a photo row configured for file sync tests."""
+    now = utc_now()
+    async with AsyncSession(engine) as session:
+        async with session.begin():
+            photo = Photo(
+                hive_id=hive_id,
+                device_id=device_id,
+                boot_id=1,
+                captured_at=now,
+                captured_at_source="device_ntp",
+                sequence=1,
+                photo_path=photo_path,
+                file_size_bytes=len(JPEG_MAGIC),
+                sha256=sha256,
+                width=800,
+                height=600,
+                ml_status=ml_status,
+                file_synced=file_synced,
+                row_synced=1,
+            )
+            session.add(photo)
+    return photo
+
+
+# ---------------------------------------------------------------------------
+# File sync tests
+# ---------------------------------------------------------------------------
+
+
+async def test_push_files_uploads_to_storage(sync_engine, tmp_path):
+    """Create photo with file_synced=0, ml_status='completed', push, verify upload."""
+    photo_dir = str(tmp_path / "photos")
+    os.makedirs(photo_dir, exist_ok=True)
+    # Create sentinel
+    with open(os.path.join(photo_dir, ".waggle-sentinel"), "w") as f:
+        f.write("")
+
+    photo_path = "1/2026-01-01/cam-01_1_1.jpg"
+    content, sha = _create_photo_file(photo_dir, photo_path)
+
+    # Seed DB prerequisites
+    await _seed_hive(sync_engine, synced=True)
+    await _seed_camera_node(sync_engine, synced=True)
+    await _seed_photo_for_file_sync(sync_engine, sha256=sha)
+
+    client = MockSupabaseClient()
+    count = await push_files(sync_engine, client, photo_dir)
+
+    assert count == 1
+
+    # Verify upload happened
+    bucket = client.storage.from_("photos")
+    assert len(bucket.uploads) == 1
+    assert bucket.uploads[0]["path"] == photo_path
+    assert bucket.uploads[0]["data"] == content
+
+    # Verify file_synced = 1 in DB
+    async with AsyncSession(sync_engine) as session:
+        photo = (await session.execute(select(Photo))).scalar_one()
+        assert photo.file_synced == 1
+
+
+async def test_push_files_verifies_sha256(sync_engine, tmp_path):
+    """Create photo with wrong sha256, push, verify NOT uploaded."""
+    photo_dir = str(tmp_path / "photos")
+    os.makedirs(photo_dir, exist_ok=True)
+    with open(os.path.join(photo_dir, ".waggle-sentinel"), "w") as f:
+        f.write("")
+
+    photo_path = "1/2026-01-01/cam-01_1_1.jpg"
+    _create_photo_file(photo_dir, photo_path)
+
+    await _seed_hive(sync_engine, synced=True)
+    await _seed_camera_node(sync_engine, synced=True)
+    # Use a wrong sha256 hash
+    await _seed_photo_for_file_sync(sync_engine, sha256="bad_hash_" + "0" * 55)
+
+    client = MockSupabaseClient()
+    count = await push_files(sync_engine, client, photo_dir)
+
+    assert count == 0
+    # No uploads should have occurred
+    assert "photos" not in client.storage.buckets
+
+    # file_synced should still be 0
+    async with AsyncSession(sync_engine) as session:
+        photo = (await session.execute(select(Photo))).scalar_one()
+        assert photo.file_synced == 0
+
+
+async def test_push_files_skips_pending_ml(sync_engine, tmp_path):
+    """Photo with ml_status='pending' should NOT be uploaded."""
+    photo_dir = str(tmp_path / "photos")
+    os.makedirs(photo_dir, exist_ok=True)
+    with open(os.path.join(photo_dir, ".waggle-sentinel"), "w") as f:
+        f.write("")
+
+    photo_path = "1/2026-01-01/cam-01_1_1.jpg"
+    content, sha = _create_photo_file(photo_dir, photo_path)
+
+    await _seed_hive(sync_engine, synced=True)
+    await _seed_camera_node(sync_engine, synced=True)
+    await _seed_photo_for_file_sync(sync_engine, sha256=sha, ml_status="pending")
+
+    client = MockSupabaseClient()
+    count = await push_files(sync_engine, client, photo_dir)
+
+    assert count == 0
+    assert "photos" not in client.storage.buckets
+
+
+async def test_push_files_sets_supabase_path(sync_engine, tmp_path):
+    """After successful upload, supabase_path column should be set."""
+    photo_dir = str(tmp_path / "photos")
+    os.makedirs(photo_dir, exist_ok=True)
+    with open(os.path.join(photo_dir, ".waggle-sentinel"), "w") as f:
+        f.write("")
+
+    photo_path = "1/2026-01-01/cam-01_1_1.jpg"
+    content, sha = _create_photo_file(photo_dir, photo_path)
+
+    await _seed_hive(sync_engine, synced=True)
+    await _seed_camera_node(sync_engine, synced=True)
+    await _seed_photo_for_file_sync(sync_engine, sha256=sha)
+
+    client = MockSupabaseClient()
+    await push_files(sync_engine, client, photo_dir)
+
+    async with AsyncSession(sync_engine) as session:
+        photo = (await session.execute(select(Photo))).scalar_one()
+        assert photo.supabase_path == photo_path
+        assert photo.file_synced == 1
+
+
+async def test_push_files_sentinel_guard(sync_engine, tmp_path):
+    """No sentinel file should return 0 immediately."""
+    photo_dir = str(tmp_path / "photos")
+    os.makedirs(photo_dir, exist_ok=True)
+    # No sentinel file created
+
+    client = MockSupabaseClient()
+    count = await push_files(sync_engine, client, photo_dir)
+
+    assert count == 0

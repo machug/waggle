@@ -1,6 +1,8 @@
 """Cloud sync service — bidirectional sync between local SQLite and Supabase."""
 
+import hashlib
 import logging
+import os
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -124,3 +126,78 @@ def _get_pk_column(model_cls) -> str:
     """Get the primary key column name for a model."""
     pk_cols = [col.name for col in model_cls.__table__.primary_key.columns]
     return pk_cols[0]
+
+
+async def push_files(engine: AsyncEngine, supabase_client, photo_dir: str) -> int:
+    """Upload unsynced photo files to Supabase Storage.
+
+    Reads photos WHERE file_synced = 0 AND ml_status IN ('completed', 'failed').
+    Verifies SHA256 before upload.
+    Sets file_synced = 1 and supabase_path on success.
+
+    Returns count of files uploaded.
+    """
+    # Sentinel guard
+    sentinel = os.path.join(photo_dir, ".waggle-sentinel")
+    if not os.path.exists(sentinel):
+        logger.warning("Photo storage unavailable, skipping file sync")
+        return 0
+
+    count = 0
+    async with AsyncSession(engine) as session:
+        result = await session.execute(
+            select(Photo)
+            .where(
+                Photo.file_synced == 0,
+                Photo.ml_status.in_(["completed", "failed"]),
+            )
+            .limit(BATCH_SIZE)
+        )
+        photos = result.scalars().all()
+
+        for photo in photos:
+            full_path = os.path.join(photo_dir, photo.photo_path)
+            if not os.path.exists(full_path):
+                logger.warning("Photo file missing, skipping: %s", photo.photo_path)
+                continue
+
+            # Read and verify SHA256
+            with open(full_path, "rb") as f:
+                data = f.read()
+
+            actual_hash = hashlib.sha256(data).hexdigest()
+            if actual_hash != photo.sha256:
+                logger.error(
+                    "SHA256 mismatch for photo %d: expected %s, got %s",
+                    photo.id,
+                    photo.sha256,
+                    actual_hash,
+                )
+                continue
+
+            # Upload to Supabase Storage
+            # Path in storage: hive_id/date/filename
+            storage_path = photo.photo_path
+
+            try:
+                supabase_client.storage.from_("photos").upload(
+                    storage_path,
+                    data,
+                    file_options={"content-type": "image/jpeg", "upsert": "true"},
+                )
+            except Exception:
+                logger.exception("Failed to upload photo %d to storage", photo.id)
+                continue
+
+            # Mark as synced
+            await session.execute(
+                text("UPDATE photos SET file_synced = 1, supabase_path = :path WHERE id = :id"),
+                {"path": storage_path, "id": photo.id},
+            )
+            count += 1
+
+        await session.commit()
+
+    if count > 0:
+        logger.info("Uploaded %d photo file(s) to Supabase Storage", count)
+    return count
