@@ -3,7 +3,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-
 async def test_create_hive(client, auth_headers):
     resp = await client.post(
         "/api/hives",
@@ -141,7 +140,7 @@ async def test_hive_list_latest_traffic_with_data(client, auth_headers):
     # Insert reading + bee_count directly
     engine = client._transport.app.state.engine
     async with AsyncSession(engine) as session:
-        from waggle.models import SensorReading, BeeCount
+        from waggle.models import BeeCount, SensorReading
         from waggle.utils.timestamps import utc_now
         reading = SensorReading(
             hive_id=1, observed_at=utc_now(), ingested_at=utc_now(),

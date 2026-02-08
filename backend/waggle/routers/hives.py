@@ -8,7 +8,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.models import BeeCount, Hive, SensorReading
-from waggle.schemas import HiveCreate, HiveOut, HivesResponse, HiveUpdate, LatestReading, LatestTrafficOut
+from waggle.schemas import (
+    HiveCreate,
+    HiveOut,
+    HivesResponse,
+    HiveUpdate,
+    LatestReading,
+    LatestTrafficOut,
+)
 from waggle.utils.timestamps import utc_now
 
 
@@ -69,7 +76,9 @@ def _latest_traffic_subquery():
     )
 
 
-def _latest_traffic_from_row(bc_observed_at, bc_bees_in, bc_bees_out, bc_net_out, bc_total_traffic) -> LatestTrafficOut | None:
+def _latest_traffic_from_row(
+    bc_observed_at, bc_bees_in, bc_bees_out, bc_net_out, bc_total_traffic,
+) -> LatestTrafficOut | None:
     """Build a LatestTrafficOut from joined columns, or None if no bee count exists."""
     if bc_observed_at is None:
         return None

@@ -10,7 +10,7 @@ Phase 1 rules:
 Phase 2 correlation rules (require bee_counts data):
 - POSSIBLE_SWARM (correlation): Weight drop >1.5kg AND net_out >500 in 1h (critical, 12h cooldown)
 - ABSCONDING: Weight drop >2.0kg AND net_out >400 over 2h (critical, 24h cooldown)
-- ROBBING: total_traffic >1000/hr AND net_out <-200 AND weight drop >0.5kg in 1h (high, 4h cooldown)
+- ROBBING: total_traffic >1000/hr AND net_out <-200 AND weight >0.5kg (high, 4h)
 - LOW_ACTIVITY: today's total_traffic <20% of 7-day avg (medium, 24h cooldown)
 """
 

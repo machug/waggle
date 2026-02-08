@@ -147,7 +147,7 @@ async def test_full_pipeline(tmp_path):
 
 
 async def test_phase2_pipeline(tmp_path):
-    """Phase 2: 48-byte frame -> bridge decode -> worker ingest -> DB (sensor + bee_counts) -> API."""
+    """Phase 2: 48-byte frame -> bridge -> worker -> DB (both tables) -> API."""
     # 1. Build 48-byte payload and COBS-encode
     payload = _build_phase2_payload(
         hive_id=1, sequence=100,
@@ -244,7 +244,10 @@ async def test_phase2_pipeline(tmp_path):
         assert result.scalar() == 1, "Expected exactly 1 row in bee_counts"
 
         result = await session.execute(
-            text("SELECT bees_in, bees_out, net_out, total_traffic FROM bee_counts WHERE hive_id = 1")
+            text(
+                "SELECT bees_in, bees_out, net_out, total_traffic "
+                "FROM bee_counts WHERE hive_id = 1"
+            )
         )
         row = result.first()
         assert row.bees_in == 150

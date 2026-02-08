@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.database import create_engine_from_url, init_db
-from waggle.models import Alert, BeeCount, Hive, SensorReading
+from waggle.models import BeeCount, Hive, SensorReading
 from waggle.services.alert_engine import AlertEngine
 from waggle.utils.timestamps import utc_now
 

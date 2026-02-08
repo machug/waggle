@@ -1,10 +1,11 @@
 """Tests for traffic API endpoints."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.models import BeeCount, SensorReading
-from datetime import datetime, UTC, timedelta
 
 
 async def _seed_hive_and_traffic(client, auth_headers, engine, count=5, hive_id=1):
