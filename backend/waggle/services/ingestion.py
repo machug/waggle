@@ -77,7 +77,7 @@ class IngestionService:
             return False
 
         # 2. Schema version
-        if payload.get("schema_version") != 1:
+        if payload.get("schema_version") not in (1, 2):
             logger.warning("Bad schema_version: %s", payload.get("schema_version"))
             return False
 
@@ -110,7 +110,7 @@ class IngestionService:
             return False
 
         # 5. msg_type
-        if payload.get("msg_type") != 1:
+        if payload.get("msg_type") not in (1, 2):
             logger.warning("Bad msg_type: %s", payload.get("msg_type"))
             return False
 

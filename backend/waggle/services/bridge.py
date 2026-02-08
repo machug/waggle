@@ -1,10 +1,20 @@
 """Bridge service: processes raw COBS-encoded serial frames into MQTT-ready JSON dicts."""
 
+import logging
+
 from waggle.utils.cobs import CobsDecodeError, cobs_decode
 from waggle.utils.payload import PayloadError, deserialize_payload
 from waggle.utils.timestamps import utc_now
 
-_FRAME_LENGTH = 38  # 6 bytes MAC + 32 bytes payload
+logger = logging.getLogger(__name__)
+
+_MAC_LENGTH = 6
+_VALID_FRAME_LENGTHS = {
+    38,  # 6 MAC + 32 payload (Phase 1, msg_type=0x01)
+    54,  # 6 MAC + 48 payload (Phase 2, msg_type=0x02)
+}
+
+_TRAFFIC_FIELDS = ("bees_in", "bees_out", "period_ms", "lane_mask", "stuck_mask")
 
 
 class BridgeProcessor:
@@ -21,18 +31,22 @@ class BridgeProcessor:
         except CobsDecodeError:
             return None
 
-        # 2. Validate frame length
-        if len(decoded) != _FRAME_LENGTH:
+        # 2. Validate frame length (38 for Phase 1, 54 for Phase 2)
+        if len(decoded) not in _VALID_FRAME_LENGTHS:
+            logger.warning(
+                "Unexpected frame length %d bytes (expected 38 or 54)",
+                len(decoded),
+            )
             return None
 
         # 3. Extract MAC (first 6 bytes) and format as uppercase colon-separated hex
-        mac_bytes = decoded[:6]
+        mac_bytes = decoded[:_MAC_LENGTH]
         mac_str = ":".join(f"{b:02X}" for b in mac_bytes)
 
-        # 4. Extract payload (bytes 6-37) — must be bytes for deserialize_payload
-        payload_bytes = bytes(decoded[6:])
+        # 4. Extract payload (remaining bytes after MAC)
+        payload_bytes = bytes(decoded[_MAC_LENGTH:])
 
-        # 5-6. Deserialize payload (includes CRC-8 validation internally)
+        # 5-6. Deserialize payload (includes CRC-8 and msg_type validation internally)
         try:
             payload = deserialize_payload(payload_bytes)
         except PayloadError:
@@ -45,7 +59,7 @@ class BridgeProcessor:
         topic = f"waggle/{payload['hive_id']}/sensors"
 
         msg = {
-            "schema_version": 1,
+            "schema_version": 2,
             "hive_id": payload["hive_id"],
             "msg_type": payload["msg_type"],
             "sequence": payload["sequence"],
@@ -59,5 +73,10 @@ class BridgeProcessor:
             "observed_at": observed_at,
         }
 
-        # 9. Return topic and dict
+        # 9. Include traffic fields for Phase 2 (msg_type=0x02) payloads
+        if payload["msg_type"] == 0x02:
+            for field in _TRAFFIC_FIELDS:
+                msg[field] = payload[field]
+
+        # 10. Return topic and dict
         return topic, msg
