@@ -7,6 +7,7 @@
 	import TrafficChart from '$lib/components/TrafficChart.svelte';
 	import DailySummaryChart from '$lib/components/DailySummaryChart.svelte';
 	import ActivityHeatmap from '$lib/components/ActivityHeatmap.svelte';
+	import PhotoFeed from '$lib/components/PhotoFeed.svelte';
 	import { startPolling } from '$lib/stores/polling';
 	import { page } from '$app/state';
 
@@ -22,6 +23,8 @@
 	const trafficHourly = $derived(data.trafficHourly ?? []);
 	const trafficHeatmap = $derived(data.trafficHeatmap ?? []);
 	const trafficSummary = $derived(data.trafficSummary);
+	const photos = $derived(data.photos ?? []);
+	const photoDetections = $derived(data.photoDetections ?? []);
 
 	// The most recent reading for stats display
 	const latestReading = $derived(readings.length > 0 ? readings[readings.length - 1] : null);
@@ -143,6 +146,12 @@
 				No traffic data available. Phase 2 sensor required.
 			</div>
 		{/if}
+
+		<!-- Photos section (Phase 3) -->
+		<div class="mb-6">
+			<h2 class="text-lg font-semibold text-amber-900 mb-3">Photos</h2>
+			<PhotoFeed {photos} detections={photoDetections} />
+		</div>
 
 		<!-- Environment + Battery: side by side -->
 		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
