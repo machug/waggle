@@ -43,6 +43,7 @@ def create_app(
             await engine.dispose()
 
     app = FastAPI(lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
+    app.state.engine = engine
     app.state.api_key = api_key
     verify_key = create_api_key_dependency(api_key)
 
