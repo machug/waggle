@@ -20,6 +20,8 @@ FLAG_FIRST_BOOT = 1 << 1  # bit 1
 FLAG_HX711_ERROR = 1 << 3  # bit 3
 FLAG_BME280_ERROR = 1 << 4  # bit 4
 FLAG_BATTERY_ERROR = 1 << 5  # bit 5
+FLAG_MEASUREMENT_CLAMPED = 1 << 6  # bit 6
+FLAG_COUNTER_STUCK = 1 << 7  # bit 7
 
 # Dedup constants
 DEDUP_TTL_SECONDS = 30 * 60  # 30 minutes
@@ -250,10 +252,90 @@ class IngestionService:
                     {"observed_at": observed_at, "hive_id": hive_id},
                 )
 
-        # 14. Trigger alert engine
+                # 14. Phase 2: Insert bee_counts for traffic payloads
+                msg_type = payload.get("msg_type")
+                if msg_type == 2:
+                    traffic_ok = self._validate_traffic(payload)
+                    if traffic_ok:
+                        try:
+                            await session.execute(
+                                text(
+                                    "INSERT INTO bee_counts "
+                                    "(reading_id, hive_id, observed_at, ingested_at, "
+                                    "period_ms, bees_in, bees_out, lane_mask, stuck_mask, "
+                                    "sequence, flags, sender_mac) "
+                                    "VALUES (:reading_id, :hive_id, :observed_at, :ingested_at, "
+                                    ":period_ms, :bees_in, :bees_out, :lane_mask, :stuck_mask, "
+                                    ":sequence, :flags, :sender_mac)"
+                                ),
+                                {
+                                    "reading_id": reading_id,
+                                    "hive_id": hive_id,
+                                    "observed_at": observed_at,
+                                    "ingested_at": ingested_at,
+                                    "period_ms": payload["period_ms"],
+                                    "bees_in": payload["bees_in"],
+                                    "bees_out": payload["bees_out"],
+                                    "lane_mask": payload["lane_mask"],
+                                    "stuck_mask": payload["stuck_mask"],
+                                    "sequence": sequence,
+                                    "flags": flags,
+                                    "sender_mac": sender_mac,
+                                },
+                            )
+                            logger.info(
+                                "Traffic ingested: hive=%d in=%d out=%d period=%dms",
+                                hive_id,
+                                payload["bees_in"],
+                                payload["bees_out"],
+                                payload["period_ms"],
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to insert bee_counts for reading %d", reading_id
+                            )
+                            raise  # Rollback entire transaction
+                    else:
+                        logger.warning(
+                            "Traffic validation failed for hive=%d, sensor_readings saved",
+                            hive_id,
+                        )
+
+        # 15. Add traffic fields to converted dict if present
+        if payload.get("msg_type") == 2:
+            converted["bees_in"] = payload.get("bees_in")
+            converted["bees_out"] = payload.get("bees_out")
+            converted["period_ms"] = payload.get("period_ms")
+            converted["lane_mask"] = payload.get("lane_mask")
+            converted["stuck_mask"] = payload.get("stuck_mask")
+
+        # 16. Trigger alert engine
         await self.alert_engine.check_reading(hive_id, reading_id, converted)
 
         return True
+
+    def _validate_traffic(self, payload: dict) -> bool:
+        """Validate Phase 2 traffic fields."""
+        try:
+            bees_in = payload.get("bees_in")
+            bees_out = payload.get("bees_out")
+            period_ms = payload.get("period_ms")
+            lane_mask = payload.get("lane_mask")
+            stuck_mask = payload.get("stuck_mask")
+
+            if bees_in is None or not (0 <= bees_in <= 65535):
+                return False
+            if bees_out is None or not (0 <= bees_out <= 65535):
+                return False
+            if period_ms is None or not (1000 <= period_ms <= 3_600_000):
+                return False
+            if lane_mask is None or not (0 <= lane_mask <= 255):
+                return False
+            if stuck_mask is None or not (0 <= stuck_mask <= 255):
+                return False
+            return True
+        except (TypeError, ValueError):
+            return False
 
     def _evict_dedup_cache(self, hive_id: int, now_mono: float) -> None:
         """Sweep expired entries from a hive's dedup cache, then cap at max size."""
