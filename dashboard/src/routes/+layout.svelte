@@ -8,6 +8,8 @@
 
 	const navLinks = [
 		{ href: '/', label: 'Apiary' },
+		{ href: '/varroa', label: 'Varroa' },
+		{ href: '/inspections', label: 'Inspections' },
 		{ href: '/alerts', label: 'Alerts' },
 		{ href: '/settings', label: 'Settings' }
 	];
