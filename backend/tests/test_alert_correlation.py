@@ -126,7 +126,7 @@ async def test_possible_swarm_correlation_fires(engine, alert_engine, hive_with_
 
     # The trigger reading (last one in the window)
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=1,
@@ -145,7 +145,7 @@ async def test_possible_swarm_correlation_fires(engine, alert_engine, hive_with_
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     swarm_alerts = [a for a in alerts if a["type"] == "POSSIBLE_SWARM"]
     assert len(swarm_alerts) == 1
     assert swarm_alerts[0]["severity"] == "critical"
@@ -168,7 +168,7 @@ async def test_possible_swarm_no_fire_no_weight_drop(engine, alert_engine, hive_
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=1,
@@ -187,7 +187,7 @@ async def test_possible_swarm_no_fire_no_weight_drop(engine, alert_engine, hive_
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     assert not any(a["type"] == "POSSIBLE_SWARM" for a in alerts)
 
 
@@ -210,7 +210,7 @@ async def test_possible_swarm_no_fire_insufficient_readings(
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=1,
@@ -229,7 +229,7 @@ async def test_possible_swarm_no_fire_insufficient_readings(
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     assert not any(a["type"] == "POSSIBLE_SWARM" for a in alerts)
 
 
@@ -245,7 +245,7 @@ async def test_possible_swarm_fallback_weight_only(engine, alert_engine, hive_wi
         )
 
     observed = _ts(now)
-    rid = await _insert_reading(
+    await _insert_reading(
         engine, 1, weight_kg=32.0, observed_at=observed, ingested_at=observed, sequence=6
     )
     reading = {
@@ -257,7 +257,7 @@ async def test_possible_swarm_fallback_weight_only(engine, alert_engine, hive_wi
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     swarm_alerts = [a for a in alerts if a["type"] == "POSSIBLE_SWARM"]
     assert len(swarm_alerts) == 1
     assert swarm_alerts[0]["severity"] == "high"  # Phase 1 severity
@@ -287,7 +287,7 @@ async def test_absconding_fires(engine, alert_engine, hive_with_reading):
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=3,
@@ -306,7 +306,7 @@ async def test_absconding_fires(engine, alert_engine, hive_with_reading):
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     absconding = [a for a in alerts if a["type"] == "ABSCONDING"]
     assert len(absconding) == 1
     assert absconding[0]["severity"] == "critical"
@@ -331,7 +331,7 @@ async def test_absconding_no_fire_short_window(engine, alert_engine, hive_with_r
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=3,
@@ -350,7 +350,7 @@ async def test_absconding_no_fire_short_window(engine, alert_engine, hive_with_r
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     assert not any(a["type"] == "ABSCONDING" for a in alerts)
 
 
@@ -380,7 +380,7 @@ async def test_robbing_fires(engine, alert_engine, hive_with_reading):
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=40,
@@ -399,7 +399,7 @@ async def test_robbing_fires(engine, alert_engine, hive_with_reading):
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     robbing = [a for a in alerts if a["type"] == "ROBBING"]
     assert len(robbing) == 1
     assert robbing[0]["severity"] == "high"
@@ -422,7 +422,7 @@ async def test_robbing_no_fire_no_weight_drop(engine, alert_engine, hive_with_re
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=40,
@@ -441,7 +441,7 @@ async def test_robbing_no_fire_no_weight_drop(engine, alert_engine, hive_with_re
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     assert not any(a["type"] == "ROBBING" for a in alerts)
 
 
@@ -486,7 +486,7 @@ async def test_low_activity_fires(engine, alert_engine, hive_with_reading):
 
     # Trigger reading
     observed = _ts(today_start + timedelta(hours=2))
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=0,
@@ -505,15 +505,13 @@ async def test_low_activity_fires(engine, alert_engine, hive_with_reading):
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     low_act = [a for a in alerts if a["type"] == "LOW_ACTIVITY"]
     assert len(low_act) == 1
     assert low_act[0]["severity"] == "medium"
 
 
-async def test_low_activity_no_fire_insufficient_history(
-    engine, alert_engine, hive_with_reading
-):
+async def test_low_activity_no_fire_insufficient_history(engine, alert_engine, hive_with_reading):
     """Less than 3 prior days with data should not trigger LOW_ACTIVITY."""
     now = datetime.now(UTC)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -548,7 +546,7 @@ async def test_low_activity_no_fire_insufficient_history(
     )
 
     observed = _ts(today_start + timedelta(hours=2))
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=0,
@@ -567,7 +565,7 @@ async def test_low_activity_no_fire_insufficient_history(
         "observed_at": observed,
         "flags": 0,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     assert not any(a["type"] == "LOW_ACTIVITY" for a in alerts)
 
 
@@ -594,7 +592,7 @@ async def test_first_boot_excluded(engine, alert_engine, hive_with_reading):
         )
 
     observed = _ts(now)
-    rid = await _insert_reading_with_traffic(
+    await _insert_reading_with_traffic(
         engine,
         1,
         bees_in=1,
@@ -614,7 +612,7 @@ async def test_first_boot_excluded(engine, alert_engine, hive_with_reading):
         "observed_at": observed,
         "flags": 0x02,
     }
-    alerts = await alert_engine.check_reading(1, rid, reading)
+    alerts = await alert_engine.check_reading(1, reading)
     # Correlation rules should not fire because all readings are excluded
     assert not any(a["type"] == "POSSIBLE_SWARM" and a["severity"] == "critical" for a in alerts)
 
@@ -665,7 +663,7 @@ async def test_cooldown_prevents_duplicate(engine, alert_engine, hive_with_readi
         "observed_at": obs1,
         "flags": 0,
     }
-    alerts1 = await alert_engine.check_reading(1, rid1, reading1)
+    alerts1 = await alert_engine.check_reading(1, reading1)
     assert any(a["type"] == "POSSIBLE_SWARM" for a in alerts1)
 
     # Second swarm alert should be suppressed by cooldown
@@ -679,5 +677,5 @@ async def test_cooldown_prevents_duplicate(engine, alert_engine, hive_with_readi
         "observed_at": obs2,
         "flags": 0,
     }
-    alerts2 = await alert_engine.check_reading(1, rid2, reading2)
+    alerts2 = await alert_engine.check_reading(1, reading2)
     assert not any(a["type"] == "POSSIBLE_SWARM" for a in alerts2)
