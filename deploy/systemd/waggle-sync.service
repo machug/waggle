@@ -1,0 +1,31 @@
+[Unit]
+Description=Waggle Cloud Sync - Supabase replication for readings and photos
+Documentation=https://github.com/waggle/waggle
+After=network.target waggle-api.service
+
+[Service]
+Type=simple
+User=waggle
+Group=waggle
+WorkingDirectory=/opt/waggle/backend
+EnvironmentFile=/etc/waggle/.env
+ExecStart=/opt/waggle/.venv/bin/python -m waggle sync
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=waggle-sync
+
+# Security hardening
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/waggle
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

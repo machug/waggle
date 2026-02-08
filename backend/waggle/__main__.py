@@ -1,6 +1,7 @@
-"""Entry point: python -m waggle [api|worker|bridge|notify|sync]"""
+"""Entry point: python -m waggle [api|worker|bridge|notify|sync|ml]"""
 
 import asyncio
+import os
 import sys
 
 import uvicorn
@@ -43,6 +44,26 @@ def run_notify():
     print(f"Dispatched webhooks for {count} alert(s).")
 
 
+def run_ml():
+    """Run the ML inference worker."""
+    settings = Settings()
+    model_path = os.environ.get(
+        "ML_MODEL_PATH", "/var/lib/waggle/models/yolov8n.pt"
+    )
+
+    from waggle.services.ml_worker import run_worker
+
+    asyncio.run(
+        run_worker(
+            db_url=settings.DB_URL,
+            photo_dir=settings.PHOTO_DIR,
+            model_path=model_path,
+            expected_hash=settings.EXPECTED_MODEL_HASH,
+            confidence_threshold=settings.DETECTION_CONFIDENCE_THRESHOLD,
+        )
+    )
+
+
 def run_sync_service():
     settings = Settings()
 
@@ -74,13 +95,15 @@ def main():
     elif command == "bridge":
         print("Bridge not yet wired (serial loop). Use 'api' for now.")
         sys.exit(1)
+    elif command == "ml":
+        run_ml()
     elif command == "notify":
         run_notify()
     elif command == "sync":
         run_sync_service()
     else:
         print(f"Unknown command: {command}")
-        print("Usage: python -m waggle [api|worker|bridge|notify|sync]")
+        print("Usage: python -m waggle [api|worker|bridge|ml|notify|sync]")
         sys.exit(1)
 
 
