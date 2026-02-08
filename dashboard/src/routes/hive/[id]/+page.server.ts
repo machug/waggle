@@ -16,12 +16,18 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	const preset = INTERVAL_MAP[range] ?? INTERVAL_MAP['7d'];
 
 	try {
-		const [hive, readings, alerts] = await Promise.all([
+		const [hive, readings, alerts, trafficHourly, trafficHeatmap, trafficSummary] = await Promise.all([
 			apiGet<any>(`/api/hives/${hiveId}`),
 			apiGet<any>(
 				`/api/hives/${hiveId}/readings?interval=${preset.interval}&limit=${preset.limit}`
 			),
-			apiGet<any>(`/api/alerts?hive_id=${hiveId}&limit=10`)
+			apiGet<any>(`/api/alerts?hive_id=${hiveId}&limit=10`),
+			// Traffic: hourly for last 24h
+			apiGet<any>(`/api/hives/${hiveId}/traffic?interval=hourly&limit=24&order=asc`).catch(() => ({ items: [] })),
+			// Traffic: hourly for last 7 days (for heatmap)
+			apiGet<any>(`/api/hives/${hiveId}/traffic?interval=hourly&limit=168&order=asc`).catch(() => ({ items: [] })),
+			// Traffic: daily summary
+			apiGet<any>(`/api/hives/${hiveId}/traffic/summary`).catch(() => null),
 		]);
 
 		return {
@@ -29,7 +35,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			readings: readings.items ?? [],
 			readingsInterval: readings.interval,
 			alerts: alerts.items ?? [],
-			range
+			range,
+			trafficHourly: trafficHourly.items ?? [],
+			trafficHeatmap: trafficHeatmap.items ?? [],
+			trafficSummary,
 		};
 	} catch (err: any) {
 		if (err?.message?.includes('404')) {
