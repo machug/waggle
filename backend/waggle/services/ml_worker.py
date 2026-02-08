@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,6 +93,29 @@ def _parse_detections(results, model) -> list[dict]:
         )
 
     return detections
+
+
+async def recover_stale(engine) -> int:
+    """Reset photos stuck in 'processing' for >10 minutes back to 'pending'.
+
+    Returns the number of photos recovered.
+    """
+    async with AsyncSession(engine) as session:
+        cutoff = (datetime.now(UTC) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%S.%f")[
+            :-3
+        ] + "Z"
+        result = await session.execute(
+            text(
+                "UPDATE photos SET ml_status='pending', ml_started_at=NULL "
+                "WHERE ml_status='processing' AND ml_started_at < :cutoff"
+            ),
+            {"cutoff": cutoff},
+        )
+        await session.commit()
+        count = result.rowcount
+        if count > 0:
+            logger.info("Recovered %d stale processing photo(s)", count)
+        return count
 
 
 async def process_one(
@@ -285,11 +309,20 @@ async def run_worker(
     engine = create_engine_from_url(db_url, is_worker=True)
     await init_db(engine)
 
+    # Startup recovery
+    await recover_stale(engine)
+    last_recovery = time.monotonic()
+
     iteration = 0
     try:
         while True:
             if max_iterations is not None and iteration >= max_iterations:
                 break
+
+            # Periodic recovery every 60 seconds
+            if time.monotonic() - last_recovery >= 60:
+                await recover_stale(engine)
+                last_recovery = time.monotonic()
 
             result = await process_one(
                 engine,

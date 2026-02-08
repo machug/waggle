@@ -1,15 +1,16 @@
 """Tests for ML worker service."""
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from waggle.database import create_engine_from_url, init_db
 from waggle.models import CameraNode, Hive, MlDetection, Photo
-from waggle.services.ml_worker import process_one
+from waggle.services.ml_worker import process_one, recover_stale
 from waggle.utils.timestamps import utc_now
 
 # ---------------------------------------------------------------------------
@@ -280,3 +281,68 @@ async def test_atomic_claim(db_with_photo):
     # Second call: no pending photos left
     result2 = await process_one(engine, model, photo_dir)
     assert result2 is None
+
+
+# ---------------------------------------------------------------------------
+# Crash recovery tests
+# ---------------------------------------------------------------------------
+
+
+async def test_recover_stale_resets_processing(db_with_photo):
+    """Photo stuck in 'processing' for 15 min should be reset to 'pending'."""
+    engine, _photo_dir = db_with_photo
+
+    stale_time = (datetime.now(UTC) - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%S.%f")[
+        :-3
+    ] + "Z"
+
+    async with AsyncSession(engine) as session:
+        await session.execute(
+            text("UPDATE photos SET ml_status='processing', ml_started_at=:ts"),
+            {"ts": stale_time},
+        )
+        await session.commit()
+
+    count = await recover_stale(engine)
+    assert count == 1
+
+    async with AsyncSession(engine) as session:
+        photo = (await session.execute(select(Photo).limit(1))).scalar_one()
+        assert photo.ml_status == "pending"
+        assert photo.ml_started_at is None
+
+
+async def test_recover_stale_ignores_recent(db_with_photo):
+    """Photo in 'processing' for only 5 min should NOT be reset."""
+    engine, _photo_dir = db_with_photo
+
+    recent_time = (datetime.now(UTC) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.%f")[
+        :-3
+    ] + "Z"
+
+    async with AsyncSession(engine) as session:
+        await session.execute(
+            text("UPDATE photos SET ml_status='processing', ml_started_at=:ts"),
+            {"ts": recent_time},
+        )
+        await session.commit()
+
+    count = await recover_stale(engine)
+    assert count == 0
+
+    async with AsyncSession(engine) as session:
+        photo = (await session.execute(select(Photo).limit(1))).scalar_one()
+        assert photo.ml_status == "processing"
+
+
+async def test_recover_stale_ignores_other_statuses(db_with_photo):
+    """Photos with ml_status='pending' should be untouched by recovery."""
+    engine, _photo_dir = db_with_photo
+
+    # Photo starts as 'pending' by default from the fixture — leave it as-is
+    count = await recover_stale(engine)
+    assert count == 0
+
+    async with AsyncSession(engine) as session:
+        photo = (await session.execute(select(Photo).limit(1))).scalar_one()
+        assert photo.ml_status == "pending"
