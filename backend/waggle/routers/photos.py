@@ -1,14 +1,16 @@
 """Photo upload and serving router."""
 
 import hashlib
+import hmac as hmac_module
 import os
 import shutil
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -240,5 +242,85 @@ def create_router(verify_key) -> APIRouter:
                     os.unlink(full_path)
                 await session.rollback()
                 raise
+
+    @router.get("/photos/{photo_id}/image")
+    async def serve_photo_image(
+        request: Request,
+        photo_id: int,
+        token: str | None = Query(default=None),
+        expires: int | None = Query(default=None),
+    ):
+        settings = (
+            request.app.state.settings
+            if hasattr(request.app.state, "settings")
+            else None
+        )
+        photo_dir = getattr(settings, "PHOTO_DIR", None) or os.environ.get(
+            "PHOTO_DIR", "/var/lib/waggle/photos"
+        )
+        signing_secret = getattr(settings, "LOCAL_SIGNING_SECRET", None) or ""
+        signing_ttl = getattr(settings, "LOCAL_SIGNING_TTL_SEC", None) or 600
+        api_key_expected = request.app.state.api_key
+
+        # Auth: either X-API-Key header or signed token
+        api_key = request.headers.get("X-API-Key")
+        authenticated = False
+
+        if api_key and hmac_module.compare_digest(api_key, api_key_expected):
+            authenticated = True
+        elif token and expires is not None and signing_secret:
+            # Verify signed token
+            expected_token = hmac_module.new(
+                signing_secret.encode("utf-8"),
+                f"{photo_id}.{expires}".encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            if hmac_module.compare_digest(token, expected_token):
+                if expires >= int(time.time()):
+                    authenticated = True
+                else:
+                    raise HTTPException(
+                        status_code=403, detail="Invalid or expired token"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=403, detail="Invalid or expired token"
+                )
+
+        if not authenticated:
+            if token is not None or expires is not None:
+                raise HTTPException(
+                    status_code=403, detail="Invalid or expired token"
+                )
+            raise HTTPException(status_code=401, detail="Missing or invalid API key")
+
+        # Sentinel guard
+        sentinel = os.path.join(photo_dir, ".waggle-sentinel")
+        if not os.path.exists(sentinel):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": {
+                        "code": "STORAGE_UNAVAILABLE",
+                        "message": "Photo storage is unavailable",
+                    }
+                },
+            )
+
+        # Look up photo
+        async with AsyncSession(request.app.state.engine) as session:
+            photo = await session.get(Photo, photo_id)
+            if not photo:
+                raise HTTPException(status_code=404, detail="Photo not found")
+
+            full_path = os.path.join(photo_dir, photo.photo_path)
+            if not os.path.exists(full_path):
+                raise HTTPException(status_code=404, detail="Photo not found")
+
+        return FileResponse(
+            full_path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": f"private, max-age={signing_ttl}"},
+        )
 
     return router
