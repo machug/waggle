@@ -227,6 +227,212 @@ void test_cobs_encode_trailing_zero(void) {
     assert_encode(input, sizeof(input), expected, sizeof(expected));
 }
 
+// ---- Phase 2: 54-byte frame tests ----
+
+/**
+ * 54-byte frame (Phase 2): bytes(range(54)) — starts with 0x00.
+ * Python: len(cobs_encode(bytes(range(54)))) == 55
+ *
+ * Expected output verified from Python:
+ * [0x01, 0x36, 0x01, 0x02, ..., 0x35]
+ * (first byte 0x01 = code for the leading zero, then 0x36 = code for
+ * the remaining 53 non-zero bytes 0x01..0x35)
+ */
+void test_cobs_encode_54byte_frame(void) {
+    uint8_t input[54];
+    for (int i = 0; i < 54; i++) {
+        input[i] = (uint8_t)i;  // 0x00, 0x01, ..., 0x35
+    }
+
+    // Expected from Python: [0x01, 0x36, 0x01, 0x02, ..., 0x35]
+    uint8_t expected[55];
+    expected[0] = 0x01;  // Code for the leading zero byte
+    expected[1] = 0x36;  // Code: 53 non-zero bytes + 1 = 54 = 0x36
+    for (int i = 1; i <= 53; i++) {
+        expected[i + 1] = (uint8_t)i;  // 0x01 through 0x35
+    }
+
+    assert_encode(input, sizeof(input), expected, sizeof(expected));
+}
+
+/**
+ * 54-byte frame with no zeros: bytes([1..54]).
+ * Python: cobs_encode(bytes(range(1,55))) produces [0x37, 0x01, ..., 0x36]
+ * (single block, code = 54+1 = 0x37).
+ */
+void test_cobs_encode_54byte_no_zeros(void) {
+    uint8_t input[54];
+    for (int i = 0; i < 54; i++) {
+        input[i] = (uint8_t)(i + 1);  // 0x01 through 0x36
+    }
+
+    uint8_t expected[55];
+    expected[0] = 0x37;  // Code: 54 non-zero bytes + 1 = 55 = 0x37
+    for (int i = 0; i < 54; i++) {
+        expected[i + 1] = (uint8_t)(i + 1);
+    }
+
+    assert_encode(input, sizeof(input), expected, sizeof(expected));
+}
+
+/**
+ * COBS encode/decode roundtrip for 54-byte frame.
+ *
+ * Since the bridge only encodes (decode is on the Python side), we verify
+ * the roundtrip property manually: encode, then decode by hand, and check
+ * the result matches the original input.
+ *
+ * COBS decode algorithm:
+ *   1. Read code byte.
+ *   2. Copy (code - 1) data bytes.
+ *   3. If code != 0xFF, emit a zero (unless at end of data).
+ *   4. Repeat until all encoded bytes consumed.
+ */
+static size_t cobs_decode_test(const uint8_t* encoded, size_t enc_len,
+                                uint8_t* decoded, size_t dec_max) {
+    size_t di = 0;  // decoded index
+    size_t ei = 0;  // encoded index
+
+    while (ei < enc_len) {
+        uint8_t code = encoded[ei++];
+        if (code == 0) break;  // Unexpected zero — malformed
+
+        for (uint8_t j = 1; j < code; j++) {
+            if (ei >= enc_len || di >= dec_max) return 0;  // Error
+            decoded[di++] = encoded[ei++];
+        }
+
+        // Append implicit zero unless code is 0xFF or we're at end
+        if (code != 0xFF && ei < enc_len) {
+            if (di >= dec_max) return 0;
+            decoded[di++] = 0x00;
+        }
+    }
+
+    return di;
+}
+
+/**
+ * Roundtrip test for 54-byte frame (Phase 2 bee-counting payload size).
+ * Encode then decode should produce the exact original data.
+ */
+void test_cobs_roundtrip_54byte(void) {
+    // Build a realistic 54-byte frame: 6-byte MAC + 48-byte payload
+    uint8_t original[54];
+    for (int i = 0; i < 54; i++) {
+        original[i] = (uint8_t)((i * 7 + 13) & 0xFF);  // Pseudo-random pattern
+    }
+
+    // Encode
+    uint8_t encoded[COBS_MAX_OUTPUT];
+    size_t enc_len = cobs_encode(original, 54, encoded);
+
+    // Verify no zeros in encoded output
+    assert_no_zeros(encoded, enc_len);
+
+    // Decode
+    uint8_t decoded[64];
+    size_t dec_len = cobs_decode_test(encoded, enc_len, decoded, sizeof(decoded));
+
+    // Verify roundtrip
+    TEST_ASSERT_EQUAL_UINT(54, dec_len);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(original, decoded, 54);
+}
+
+/**
+ * Roundtrip test for 38-byte frame (Phase 1 regression).
+ * Encode then decode should produce the exact original data.
+ */
+void test_cobs_roundtrip_38byte(void) {
+    // Build a 38-byte frame: 6-byte MAC + 32-byte payload
+    uint8_t original[38];
+    for (int i = 0; i < 38; i++) {
+        original[i] = (uint8_t)((i * 11 + 3) & 0xFF);  // Pseudo-random pattern
+    }
+
+    // Encode
+    uint8_t encoded[COBS_MAX_OUTPUT];
+    size_t enc_len = cobs_encode(original, 38, encoded);
+
+    // Verify no zeros in encoded output
+    assert_no_zeros(encoded, enc_len);
+
+    // Decode
+    uint8_t decoded[64];
+    size_t dec_len = cobs_decode_test(encoded, enc_len, decoded, sizeof(decoded));
+
+    // Verify roundtrip
+    TEST_ASSERT_EQUAL_UINT(38, dec_len);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(original, decoded, 38);
+}
+
+/**
+ * Verify encoded output never contains 0x00 for 54-byte frames.
+ */
+void test_cobs_encode_54byte_no_internal_zeros(void) {
+    uint8_t buf[COBS_MAX_OUTPUT];
+    size_t n;
+
+    // 54-byte frame with zeros
+    {
+        uint8_t d[54];
+        for (int i = 0; i < 54; i++) d[i] = (uint8_t)i;
+        n = cobs_encode(d, sizeof(d), buf);
+        assert_no_zeros(buf, n);
+    }
+
+    // 54-byte frame with no zeros
+    {
+        uint8_t d[54];
+        for (int i = 0; i < 54; i++) d[i] = (uint8_t)(i + 1);
+        n = cobs_encode(d, sizeof(d), buf);
+        assert_no_zeros(buf, n);
+    }
+
+    // 54-byte frame all zeros
+    {
+        uint8_t d[54];
+        memset(d, 0, sizeof(d));
+        n = cobs_encode(d, sizeof(d), buf);
+        assert_no_zeros(buf, n);
+    }
+}
+
+/**
+ * Both 38-byte and 54-byte decoded sizes are valid frame sizes.
+ * This test ensures the COBS encoding handles both Phase 1 and Phase 2
+ * frame sizes correctly and produces correctly sized outputs.
+ */
+void test_cobs_both_frame_sizes_valid(void) {
+    uint8_t buf[COBS_MAX_OUTPUT];
+
+    // 38-byte frame (Phase 1): 6-byte MAC + 32-byte payload
+    {
+        uint8_t frame[FRAME_LEN_P1];
+        memset(frame, 0xAA, sizeof(frame));
+        size_t n = cobs_encode(frame, FRAME_LEN_P1, buf);
+
+        // For 38 bytes of non-zero data: encoded = 39 bytes (code + 38 data)
+        TEST_ASSERT_EQUAL_UINT(39, n);
+        assert_no_zeros(buf, n);
+        TEST_ASSERT_TRUE_MESSAGE(n <= COBS_MAX_OUTPUT,
+            "38-byte frame encoding exceeds COBS_MAX_OUTPUT");
+    }
+
+    // 54-byte frame (Phase 2): 6-byte MAC + 48-byte payload
+    {
+        uint8_t frame[FRAME_LEN_P2];
+        memset(frame, 0xBB, sizeof(frame));
+        size_t n = cobs_encode(frame, FRAME_LEN_P2, buf);
+
+        // For 54 bytes of non-zero data: encoded = 55 bytes (code + 54 data)
+        TEST_ASSERT_EQUAL_UINT(55, n);
+        assert_no_zeros(buf, n);
+        TEST_ASSERT_TRUE_MESSAGE(n <= COBS_MAX_OUTPUT,
+            "54-byte frame encoding exceeds COBS_MAX_OUTPUT");
+    }
+}
+
 // ---- Unity test runner ----
 
 void setUp(void) {}
@@ -235,6 +441,7 @@ void tearDown(void) {}
 int main(int argc, char** argv) {
     UNITY_BEGIN();
 
+    // Phase 1 tests (regression)
     RUN_TEST(test_cobs_encode_empty);
     RUN_TEST(test_cobs_encode_single_zero);
     RUN_TEST(test_cobs_encode_no_zeros);
@@ -246,6 +453,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_cobs_encode_254_nonzero);
     RUN_TEST(test_cobs_encode_255_nonzero);
     RUN_TEST(test_cobs_encode_trailing_zero);
+
+    // Phase 2 tests (54-byte frames)
+    RUN_TEST(test_cobs_encode_54byte_frame);
+    RUN_TEST(test_cobs_encode_54byte_no_zeros);
+    RUN_TEST(test_cobs_roundtrip_54byte);
+    RUN_TEST(test_cobs_roundtrip_38byte);
+    RUN_TEST(test_cobs_encode_54byte_no_internal_zeros);
+    RUN_TEST(test_cobs_both_frame_sizes_valid);
 
     return UNITY_END();
 }
