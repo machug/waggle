@@ -14,7 +14,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 # ---------------------------------------------------------------------------
 # Prometheus metrics  (module-level singletons)
@@ -60,6 +60,28 @@ alerts_fired = Counter(
     "waggle_alerts_fired_total",
     "Total alerts fired",
     labelnames=["hive_id", "type"],
+)
+
+# --- Phase 2 Traffic metrics ---
+traffic_ingested = Counter(
+    "waggle_traffic_ingested_total",
+    "Total bee count records successfully ingested",
+    labelnames=["hive_id"],
+)
+traffic_dropped = Counter(
+    "waggle_traffic_dropped_total",
+    "Total bee count records dropped",
+    labelnames=["reason"],
+)
+correlation_alerts_fired = Counter(
+    "waggle_alerts_correlation_total",
+    "Total correlation alerts fired",
+    labelnames=["type"],
+)
+stuck_lanes_current = Gauge(
+    "waggle_stuck_lanes_current",
+    "Current number of stuck lanes per hive",
+    labelnames=["hive_id"],
 )
 
 # ---------------------------------------------------------------------------
