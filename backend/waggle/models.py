@@ -1,13 +1,15 @@
-"""SQLAlchemy ORM models for Waggle Phase 1."""
+"""SQLAlchemy ORM models for Waggle."""
 
 from sqlalchemy import (
     REAL,
     CheckConstraint,
+    Computed,
     ForeignKey,
     Index,
     Integer,
     Text,
     UniqueConstraint,
+    desc,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -147,4 +149,43 @@ class Alert(Base):
         ),
         Index("idx_alerts_hive", "hive_id", "created_at"),
         Index("idx_alerts_unacked", "acknowledged", "created_at"),
+    )
+
+
+class BeeCount(Base):
+    __tablename__ = "bee_counts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    reading_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sensor_readings.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    hive_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("hives.id", ondelete="RESTRICT"), nullable=False
+    )
+    observed_at: Mapped[str] = mapped_column(Text, nullable=False)
+    ingested_at: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default="(strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+    )
+    period_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    bees_in: Mapped[int] = mapped_column(Integer, nullable=False)
+    bees_out: Mapped[int] = mapped_column(Integer, nullable=False)
+    net_out: Mapped[int] = mapped_column(
+        Integer, Computed("bees_out - bees_in")
+    )
+    total_traffic: Mapped[int] = mapped_column(
+        Integer, Computed("bees_in + bees_out")
+    )
+    lane_mask: Mapped[int] = mapped_column(Integer, nullable=False)
+    stuck_mask: Mapped[int] = mapped_column(Integer, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    flags: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    sender_mac: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        Index("idx_bee_counts_hive_time", "hive_id", desc("observed_at")),
     )
