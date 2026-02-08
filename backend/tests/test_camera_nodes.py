@@ -3,7 +3,6 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from waggle.auth import create_admin_key_dependency
 from waggle.database import create_engine_from_url, init_db
 from waggle.main import create_app
 
@@ -18,17 +17,12 @@ async def app(tmp_path):
     application = create_app(
         db_url=db_url,
         api_key=API_KEY,
+        admin_api_key=ADMIN_KEY,
     )
     # Manually init DB since ASGITransport does not trigger ASGI lifespan
     engine = create_engine_from_url(db_url)
     await init_db(engine)
     application.state.engine = engine
-
-    # Mount admin router (Task 5.1 will wire it permanently via create_app)
-    from waggle.routers import admin
-
-    verify_admin = create_admin_key_dependency(ADMIN_KEY)
-    application.include_router(admin.create_router(verify_admin), prefix="/api")
 
     yield application
     await engine.dispose()
