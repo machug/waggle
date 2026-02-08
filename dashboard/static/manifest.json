@@ -1,0 +1,15 @@
+{
+	"name": "Waggle Hive Monitor",
+	"short_name": "Waggle",
+	"start_url": "/",
+	"display": "standalone",
+	"background_color": "#fffbeb",
+	"theme_color": "#b45309",
+	"icons": [
+		{
+			"src": "/favicon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml"
+		}
+	]
+}
