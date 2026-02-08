@@ -129,11 +129,12 @@ class Alert(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('POSSIBLE_SWARM','HIGH_TEMP','LOW_TEMP','LOW_BATTERY','NO_DATA')",
+            "type IN ('POSSIBLE_SWARM','HIGH_TEMP','LOW_TEMP','LOW_BATTERY','NO_DATA',"
+            "'ABSCONDING','ROBBING','LOW_ACTIVITY')",
             name="ck_alert_type",
         ),
         CheckConstraint(
-            "severity IN ('high', 'medium', 'low')",
+            "severity IN ('critical', 'high', 'medium', 'low')",
             name="ck_alert_severity",
         ),
         CheckConstraint(
