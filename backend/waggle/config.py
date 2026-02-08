@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     @property
     def DB_URL(self) -> str:
-        return f"sqlite+aiosqlite:///{self.DB_PATH.lstrip('/')}"
+        return f"sqlite+aiosqlite:///{self.DB_PATH}"
 
     @model_validator(mode="after")
     def validate_trust_proxy(self) -> "Settings":

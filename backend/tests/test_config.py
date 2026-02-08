@@ -5,7 +5,7 @@ from waggle.config import Settings
 
 def test_settings_defaults():
     """Settings should have sensible defaults."""
-    s = Settings(API_KEY="test-key-123")
+    s = Settings(API_KEY="test-key-123", _env_file=None)
     assert s.DB_PATH == "/var/lib/waggle/waggle.db"
     assert s.MQTT_HOST == "127.0.0.1"
     assert s.MQTT_PORT == 1883
@@ -24,19 +24,19 @@ def test_settings_defaults():
 
 def test_settings_db_url():
     """DB_URL should be computed from DB_PATH."""
-    s = Settings(API_KEY="test-key-123", DB_PATH="/tmp/test.db")
-    assert s.DB_URL == "sqlite+aiosqlite:///tmp/test.db"
+    s = Settings(API_KEY="test-key-123", DB_PATH="/tmp/test.db", _env_file=None)
+    assert s.DB_URL == "sqlite+aiosqlite:////tmp/test.db"
 
 
 def test_settings_trust_proxy_requires_localhost():
     """When TRUST_PROXY=true, API_HOST must be 127.0.0.1."""
     import pytest
     with pytest.raises(ValueError, match="TRUST_PROXY.*127.0.0.1"):
-        Settings(API_KEY="test-key-123", TRUST_PROXY=True, API_HOST="0.0.0.0")
+        Settings(API_KEY="test-key-123", TRUST_PROXY=True, API_HOST="0.0.0.0", _env_file=None)
 
 
 def test_settings_api_key_required():
     """API_KEY is required."""
     import pytest
     with pytest.raises(Exception):
-        Settings()
+        Settings(_env_file=None)
