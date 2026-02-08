@@ -14,14 +14,18 @@ def _alert_out(alert: Alert) -> AlertOut:
     return AlertOut(
         id=alert.id,
         hive_id=alert.hive_id,
-        reading_id=alert.reading_id,
         type=alert.type,
         severity=alert.severity,
         message=alert.message,
+        observed_at=alert.observed_at,
         acknowledged=bool(alert.acknowledged),
         acknowledged_at=alert.acknowledged_at,
         acknowledged_by=alert.acknowledged_by,
         created_at=alert.created_at,
+        notified_at=alert.notified_at,
+        updated_at=alert.updated_at,
+        source=alert.source,
+        details_json=alert.details_json,
     )
 
 
