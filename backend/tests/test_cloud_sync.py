@@ -1,5 +1,6 @@
-"""Tests for cloud sync push service."""
+"""Tests for cloud sync push and pull service."""
 
+import copy
 import hashlib
 import os
 import uuid
@@ -19,13 +20,52 @@ from waggle.models import (
     MlDetection,
     Photo,
     SensorReading,
+    SyncState,
 )
-from waggle.services.sync import PUSH_ORDER, push_files, push_rows
+from waggle.services.sync import (
+    PUSH_ORDER,
+    pull_alert_acks,
+    pull_inspections,
+    push_files,
+    push_rows,
+)
 from waggle.utils.timestamps import utc_now
 
 # ---------------------------------------------------------------------------
 # Mock Supabase client
 # ---------------------------------------------------------------------------
+
+
+class MockQueryBuilder:
+    """Mock for Supabase table query builder pattern."""
+
+    def __init__(self, data=None, fail=False):
+        self._data = copy.deepcopy(data) if data else []
+        self._fail = fail
+
+    def select(self, *args):
+        return self
+
+    def eq(self, col, val):
+        self._data = [r for r in self._data if r.get(col) == val]
+        return self
+
+    def gte(self, col, val):
+        self._data = [r for r in self._data if r.get(col, "") >= val]
+        return self
+
+    def order(self, col, desc=False):
+        self._data.sort(key=lambda r: r.get(col, ""), reverse=desc)
+        return self
+
+    def limit(self, n):
+        self._data = self._data[:n]
+        return self
+
+    def execute(self):
+        if self._fail:
+            raise Exception("Network error")
+        return type("Response", (), {"data": self._data})()
 
 
 class MockSupabaseTable:
@@ -71,16 +111,21 @@ class MockStorage:
 class MockSupabaseClient:
     """Mock Supabase client for testing."""
 
-    def __init__(self, fail_tables=None):
+    def __init__(self, fail_tables=None, pull_data=None):
         self.tables = {}
         self.rpc_calls = []
         self._fail_tables = fail_tables or []
+        self._pull_data = pull_data or {}
         # Track table access order for FK order test
         self.table_access_order = []
         self.storage = MockStorage()
 
     def table(self, name):
         self.table_access_order.append(name)
+        # If pull_data is configured for this table, return a query builder
+        if name in self._pull_data:
+            fail = name in self._fail_tables
+            return MockQueryBuilder(data=self._pull_data[name], fail=fail)
         if name not in self.tables:
             self.tables[name] = MockSupabaseTable()
         if name in self._fail_tables:
@@ -563,3 +608,289 @@ async def test_push_files_sentinel_guard(sync_engine, tmp_path):
     count = await push_files(sync_engine, client, photo_dir)
 
     assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# Pull sync tests
+# ---------------------------------------------------------------------------
+
+
+async def test_pull_inspections_creates_local_rows(sync_engine):
+    """Mock Supabase returns 2 inspections with source='cloud', pull creates them locally."""
+    await _seed_hive(sync_engine, synced=True)
+
+    uuid1 = str(uuid.uuid4())
+    uuid2 = str(uuid.uuid4())
+    now = utc_now()
+
+    cloud_inspections = [
+        {
+            "uuid": uuid1,
+            "hive_id": 1,
+            "inspected_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "queen_seen": True,
+            "brood_pattern": "good",
+            "treatment_type": None,
+            "treatment_notes": None,
+            "notes": "Cloud inspection 1",
+            "source": "cloud",
+        },
+        {
+            "uuid": uuid2,
+            "hive_id": 1,
+            "inspected_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "queen_seen": False,
+            "brood_pattern": None,
+            "treatment_type": None,
+            "treatment_notes": None,
+            "notes": "Cloud inspection 2",
+            "source": "cloud",
+        },
+    ]
+
+    client = MockSupabaseClient(pull_data={"inspections": cloud_inspections})
+    count = await pull_inspections(sync_engine, client)
+
+    assert count == 2
+
+    # Verify rows exist in local DB
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Inspection).order_by(Inspection.uuid))
+        inspections = result.scalars().all()
+        assert len(inspections) == 2
+
+        uuids = {i.uuid for i in inspections}
+        assert uuid1 in uuids
+        assert uuid2 in uuids
+
+        # All should be marked as synced
+        for insp in inspections:
+            assert insp.row_synced == 1
+            assert insp.source == "cloud"
+
+
+async def test_pull_inspections_lww(sync_engine):
+    """Local inspection with newer updated_at is NOT overwritten by cloud version."""
+    await _seed_hive(sync_engine, synced=True)
+
+    test_uuid = str(uuid.uuid4())
+    old_time = "2026-01-01T00:00:00.000Z"
+    new_time = "2026-02-01T00:00:00.000Z"
+
+    # Create a local inspection with newer updated_at
+    async with AsyncSession(sync_engine) as session:
+        async with session.begin():
+            inspection = Inspection(
+                uuid=test_uuid,
+                hive_id=1,
+                inspected_at=new_time,
+                created_at=old_time,
+                updated_at=new_time,
+                queen_seen=1,
+                notes="Local version - newer",
+                source="local",
+                row_synced=1,
+            )
+            session.add(inspection)
+
+    # Cloud has older version
+    cloud_inspections = [
+        {
+            "uuid": test_uuid,
+            "hive_id": 1,
+            "inspected_at": old_time,
+            "created_at": old_time,
+            "updated_at": old_time,
+            "queen_seen": False,
+            "brood_pattern": None,
+            "treatment_type": None,
+            "treatment_notes": None,
+            "notes": "Cloud version - older",
+            "source": "cloud",
+        },
+    ]
+
+    client = MockSupabaseClient(pull_data={"inspections": cloud_inspections})
+    count = await pull_inspections(sync_engine, client)
+
+    # Should NOT have been updated (LWW: local is newer)
+    assert count == 0
+
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Inspection).where(Inspection.uuid == test_uuid))
+        insp = result.scalar_one()
+        assert insp.notes == "Local version - newer"
+        assert insp.updated_at == new_time
+
+
+async def test_pull_inspections_updates_watermark(sync_engine):
+    """After pulling, sync_state contains the watermark."""
+    await _seed_hive(sync_engine, synced=True)
+
+    test_uuid = str(uuid.uuid4())
+    now = "2026-02-01T12:00:00.000Z"
+
+    cloud_inspections = [
+        {
+            "uuid": test_uuid,
+            "hive_id": 1,
+            "inspected_at": now,
+            "created_at": now,
+            "updated_at": now,
+            "queen_seen": False,
+            "brood_pattern": None,
+            "treatment_type": None,
+            "treatment_notes": None,
+            "notes": "Test",
+            "source": "cloud",
+        },
+    ]
+
+    client = MockSupabaseClient(pull_data={"inspections": cloud_inspections})
+    await pull_inspections(sync_engine, client)
+
+    # Check watermark in sync_state
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(
+            select(SyncState.value).where(SyncState.key == "pull_inspections_watermark")
+        )
+        watermark = result.scalar_one()
+        assert watermark == f"{now}|{test_uuid}"
+
+
+async def test_pull_alert_acks_updates_local(sync_engine):
+    """Cloud alert with acknowledged=true updates local alert."""
+    await _seed_hive(sync_engine, synced=True)
+    await _seed_alert(sync_engine, acknowledged=0, synced=True)
+
+    # Read back the alert to get the id and updated_at
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Alert))
+        local_alert = result.scalar_one()
+        alert_id = local_alert.id
+        local_updated_at = local_alert.updated_at
+
+    # Cloud has a newer ack
+    newer_time = "2099-01-01T00:00:00.000Z"
+    cloud_alerts = [
+        {
+            "id": alert_id,
+            "hive_id": 1,
+            "type": "HIGH_TEMP",
+            "severity": "medium",
+            "message": "Temperature above threshold",
+            "observed_at": local_updated_at,
+            "acknowledged": True,
+            "acknowledged_at": newer_time,
+            "acknowledged_by": "cloud_user",
+            "updated_at": newer_time,
+            "source": "cloud",
+        },
+    ]
+
+    client = MockSupabaseClient(pull_data={"alerts": cloud_alerts})
+    count = await pull_alert_acks(sync_engine, client)
+
+    assert count == 1
+
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Alert).where(Alert.id == alert_id))
+        updated_alert = result.scalar_one()
+        assert updated_alert.acknowledged == 1
+        assert updated_alert.acknowledged_at == newer_time
+        assert updated_alert.acknowledged_by == "cloud_user"
+        assert updated_alert.row_synced == 1
+
+
+async def test_pull_alert_acks_lww(sync_engine):
+    """Local alert with newer updated_at is NOT overwritten."""
+    await _seed_hive(sync_engine, synced=True)
+
+    # Create alert with a very new updated_at
+    newer_time = "2099-01-01T00:00:00.000Z"
+    async with AsyncSession(sync_engine) as session:
+        async with session.begin():
+            alert = Alert(
+                hive_id=1,
+                type="HIGH_TEMP",
+                severity="medium",
+                message="Temperature above threshold",
+                observed_at=newer_time,
+                acknowledged=0,
+                created_at=newer_time,
+                updated_at=newer_time,
+                row_synced=1,
+            )
+            session.add(alert)
+
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Alert))
+        local_alert = result.scalar_one()
+        alert_id = local_alert.id
+
+    # Cloud has an older version
+    older_time = "2026-01-01T00:00:00.000Z"
+    cloud_alerts = [
+        {
+            "id": alert_id,
+            "hive_id": 1,
+            "type": "HIGH_TEMP",
+            "severity": "medium",
+            "message": "Temperature above threshold",
+            "observed_at": older_time,
+            "acknowledged": True,
+            "acknowledged_at": older_time,
+            "acknowledged_by": "old_user",
+            "updated_at": older_time,
+            "source": "cloud",
+        },
+    ]
+
+    client = MockSupabaseClient(pull_data={"alerts": cloud_alerts})
+    count = await pull_alert_acks(sync_engine, client)
+
+    # Should NOT have updated (LWW: local is newer)
+    assert count == 0
+
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Alert).where(Alert.id == alert_id))
+        alert = result.scalar_one()
+        assert alert.acknowledged == 0
+        assert alert.updated_at == newer_time
+
+
+async def test_pull_handles_network_error(sync_engine):
+    """Mock Supabase raises exception, returns 0, no local changes."""
+    await _seed_hive(sync_engine, synced=True)
+
+    # fail_tables causes MockQueryBuilder to raise on execute()
+    cloud_data = [
+        {
+            "uuid": "x",
+            "source": "cloud",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+    ]
+    client = MockSupabaseClient(
+        pull_data={"inspections": cloud_data},
+        fail_tables=["inspections"],
+    )
+    count = await pull_inspections(sync_engine, client)
+
+    assert count == 0
+
+    # No inspections should exist locally
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(select(Inspection))
+        assert result.scalars().all() == []
+
+    # No watermark should exist
+    async with AsyncSession(sync_engine) as session:
+        result = await session.execute(
+            select(SyncState.value).where(SyncState.key == "pull_inspections_watermark")
+        )
+        assert result.scalar_one_or_none() is None

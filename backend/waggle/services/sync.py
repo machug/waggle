@@ -16,6 +16,7 @@ from waggle.models import (
     MlDetection,
     Photo,
     SensorReading,
+    SyncState,
 )
 
 logger = logging.getLogger(__name__)
@@ -200,4 +201,230 @@ async def push_files(engine: AsyncEngine, supabase_client, photo_dir: str) -> in
 
     if count > 0:
         logger.info("Uploaded %d photo file(s) to Supabase Storage", count)
+    return count
+
+
+async def pull_inspections(engine: AsyncEngine, supabase_client) -> int:
+    """Pull cloud-originated inspections to local SQLite.
+
+    Uses composite watermark (updated_at, uuid) to paginate.
+    Only pulls source='cloud' inspections.
+    Uses LWW on updated_at for conflict resolution.
+
+    Returns count of rows pulled.
+    """
+    page_size = 100
+    count = 0
+
+    # Get watermark from sync_state
+    async with AsyncSession(engine) as session:
+        wm_result = await session.execute(
+            select(SyncState.value).where(SyncState.key == "pull_inspections_watermark")
+        )
+        watermark = wm_result.scalar_one_or_none() or ""
+
+    while True:
+        # Query Supabase for inspections after watermark
+        query = supabase_client.table("inspections").select("*").eq("source", "cloud")
+
+        if watermark:
+            # Composite watermark: "updated_at|uuid"
+            parts = watermark.split("|", 1)
+            wm_time = parts[0]
+            query = query.gte("updated_at", wm_time)
+
+        query = query.order("updated_at", desc=False).order("uuid", desc=False).limit(page_size)
+
+        try:
+            response = query.execute()
+        except Exception:
+            logger.exception("Failed to pull inspections from Supabase")
+            break
+
+        rows = response.data if hasattr(response, "data") else []
+        if not rows:
+            break
+
+        # Skip rows we've already seen (at or before watermark)
+        new_rows = []
+        for row in rows:
+            row_wm = f"{row['updated_at']}|{row['uuid']}"
+            if watermark and row_wm <= watermark:
+                continue
+            new_rows.append(row)
+
+        if not new_rows:
+            break
+
+        # Upsert into local SQLite with LWW
+        async with AsyncSession(engine) as session:
+            for row in new_rows:
+                # Check if local row exists and is newer
+                existing = await session.execute(
+                    select(Inspection.updated_at).where(Inspection.uuid == row["uuid"])
+                )
+                local_updated_at = existing.scalar_one_or_none()
+
+                if local_updated_at and local_updated_at >= row["updated_at"]:
+                    # Local is same or newer, skip
+                    continue
+
+                # Upsert
+                await session.execute(
+                    text(
+                        "INSERT INTO inspections (uuid, hive_id, inspected_at, created_at, "
+                        "updated_at, queen_seen, brood_pattern, treatment_type, treatment_notes, "
+                        "notes, source, row_synced) "
+                        "VALUES (:uuid, :hive_id, :inspected_at, :created_at, :updated_at, "
+                        ":queen_seen, :brood_pattern, :treatment_type, :treatment_notes, "
+                        ":notes, :source, 1) "
+                        "ON CONFLICT(uuid) DO UPDATE SET "
+                        "hive_id=excluded.hive_id, inspected_at=excluded.inspected_at, "
+                        "updated_at=excluded.updated_at, queen_seen=excluded.queen_seen, "
+                        "brood_pattern=excluded.brood_pattern, "
+                        "treatment_type=excluded.treatment_type, "
+                        "treatment_notes=excluded.treatment_notes, "
+                        "notes=excluded.notes, "
+                        "source=excluded.source, row_synced=1"
+                    ),
+                    {
+                        "uuid": row["uuid"],
+                        "hive_id": row["hive_id"],
+                        "inspected_at": row["inspected_at"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "queen_seen": 1 if row.get("queen_seen") else 0,
+                        "brood_pattern": row.get("brood_pattern"),
+                        "treatment_type": row.get("treatment_type"),
+                        "treatment_notes": row.get("treatment_notes"),
+                        "notes": row.get("notes"),
+                        "source": row.get("source", "cloud"),
+                    },
+                )
+                count += 1
+
+            # Update watermark
+            last_row = new_rows[-1]
+            watermark = f"{last_row['updated_at']}|{last_row['uuid']}"
+            await session.execute(
+                text(
+                    "INSERT INTO sync_state (key, value) "
+                    "VALUES ('pull_inspections_watermark', :wm) "
+                    "ON CONFLICT(key) DO UPDATE SET "
+                    "value = excluded.value"
+                ),
+                {"wm": watermark},
+            )
+            await session.commit()
+
+        if len(rows) < page_size:
+            break
+
+    if count > 0:
+        logger.info("Pulled %d inspection(s) from Supabase", count)
+    return count
+
+
+async def pull_alert_acks(engine: AsyncEngine, supabase_client) -> int:
+    """Pull alert acknowledgments from Supabase.
+
+    Pulls alerts where source='cloud' and acknowledged=true.
+    Uses composite watermark (updated_at, id).
+    LWW on updated_at.
+
+    Returns count of rows updated.
+    """
+    page_size = 100
+    count = 0
+
+    async with AsyncSession(engine) as session:
+        wm_result = await session.execute(
+            select(SyncState.value).where(SyncState.key == "pull_alert_acks_watermark")
+        )
+        watermark = wm_result.scalar_one_or_none() or ""
+
+    while True:
+        query = (
+            supabase_client.table("alerts")
+            .select("*")
+            .eq("source", "cloud")
+            .eq("acknowledged", True)
+        )
+
+        if watermark:
+            parts = watermark.split("|", 1)
+            wm_time = parts[0]
+            query = query.gte("updated_at", wm_time)
+
+        query = query.order("updated_at", desc=False).order("id", desc=False).limit(page_size)
+
+        try:
+            response = query.execute()
+        except Exception:
+            logger.exception("Failed to pull alert acks from Supabase")
+            break
+
+        rows = response.data if hasattr(response, "data") else []
+        if not rows:
+            break
+
+        new_rows = []
+        for row in rows:
+            row_wm = f"{row['updated_at']}|{row['id']}"
+            if watermark and row_wm <= watermark:
+                continue
+            new_rows.append(row)
+
+        if not new_rows:
+            break
+
+        async with AsyncSession(engine) as session:
+            for row in new_rows:
+                # LWW: only update if cloud version is newer
+                existing = await session.execute(
+                    select(Alert.updated_at).where(Alert.id == row["id"])
+                )
+                local_updated_at = existing.scalar_one_or_none()
+
+                if local_updated_at is None:
+                    continue  # Alert doesn't exist locally
+
+                if local_updated_at >= row["updated_at"]:
+                    continue  # Local is newer
+
+                await session.execute(
+                    text(
+                        "UPDATE alerts SET acknowledged = 1, "
+                        "acknowledged_at = :ack_at, "
+                        "acknowledged_by = :ack_by, "
+                        "updated_at = :updated_at, row_synced = 1 "
+                        "WHERE id = :id"
+                    ),
+                    {
+                        "id": row["id"],
+                        "ack_at": row.get("acknowledged_at"),
+                        "ack_by": row.get("acknowledged_by"),
+                        "updated_at": row["updated_at"],
+                    },
+                )
+                count += 1
+
+            last_row = new_rows[-1]
+            watermark = f"{last_row['updated_at']}|{last_row['id']}"
+            await session.execute(
+                text(
+                    "INSERT INTO sync_state (key, value) "
+                    "VALUES ('pull_alert_acks_watermark', :wm) "
+                    "ON CONFLICT(key) DO UPDATE SET "
+                    "value = excluded.value"
+                ),
+                {"wm": watermark},
+            )
+            await session.commit()
+
+        if len(rows) < page_size:
+            break
+
+    if count > 0:
+        logger.info("Pulled %d alert acknowledgment(s) from Supabase", count)
     return count
