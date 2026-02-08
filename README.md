@@ -5,8 +5,8 @@ Hobbyist beehive monitoring system with ESP32 sensor nodes, Raspberry Pi hub, an
 ## Architecture
 
 ```
-ESP32 Sensor Nodes (deep sleep, wake every 60s)
-    │ ESP-NOW (32-byte payload)
+ESP32 Sensor Nodes (deep/light sleep, wake every 60s)
+    │ ESP-NOW (32-byte Phase 1 / 48-byte Phase 2 payload)
     ▼
 ESP32 Bridge (USB serial, COBS framing)
     │ Serial /dev/ttyUSB0
@@ -15,7 +15,7 @@ Pi Hub: Bridge Service (Python)
     │ MQTT (mosquitto, localhost:1883)
     ▼
 Pi Hub: Worker Service (Python)
-    │ Validate, dedup, store, alert
+    │ Validate, dedup, store (sensor_readings + bee_counts), alert
     ▼
 SQLite (WAL mode)
     │
@@ -104,23 +104,37 @@ All endpoints require `X-API-Key` header unless noted.
 | DELETE | `/api/hives/{id}` | Yes | Delete hive |
 | GET | `/api/hives/{id}/readings` | Yes | Readings (raw/hourly/daily) |
 | GET | `/api/hives/{id}/readings/latest` | Yes | Latest reading |
+| GET | `/api/hives/{id}/traffic` | Yes | Traffic history (raw/hourly/daily) |
+| GET | `/api/hives/{id}/traffic/latest` | Yes | Latest traffic reading |
+| GET | `/api/hives/{id}/traffic/summary` | Yes | Traffic summary with activity score |
 | GET | `/api/alerts` | Yes | List alerts (filterable) |
 | PATCH | `/api/alerts/{id}/acknowledge` | Yes | Acknowledge alert |
 
 ## Alert Rules
 
+### Phase 1 (Environmental)
+
 | Type | Condition | Severity | Cooldown |
 |------|-----------|----------|----------|
-| POSSIBLE_SWARM | Weight drop >2kg in 1h | high | 24h |
+| POSSIBLE_SWARM | Weight drop >2kg in 1h (weight only) | high | 24h |
 | HIGH_TEMP | temp_c > 40 | medium | 4h |
 | LOW_TEMP | temp_c < 5 | medium | 4h |
 | LOW_BATTERY | battery_v < 3.3 | low | 24h |
 | NO_DATA | No reading for >15min | low | 1h |
 
+### Phase 2 (Correlation — requires bee counting sensors)
+
+| Type | Condition | Severity | Cooldown |
+|------|-----------|----------|----------|
+| POSSIBLE_SWARM | Weight drop >1.5kg AND net_out >500 in 1h | critical | 12h |
+| ABSCONDING | Weight drop >2kg AND net_out >400 over 2h | critical | 24h |
+| ROBBING | High traffic AND net inflow AND weight loss | high | 4h |
+| LOW_ACTIVITY | Traffic <20% of 7-day average | medium | 24h |
+
 ## Testing
 
 ```bash
-# Backend (186 tests)
+# Backend (297 tests)
 cd backend && pytest tests/ -v
 
 # Firmware COBS tests
@@ -135,8 +149,8 @@ cd backend && ruff check .
 
 ## Project Phases
 
-- **Phase 1: Sensor Foundation** (current) -- ESP32 nodes, Pi hub, REST API, dashboard
-- **Phase 2: Bee Counting** -- IR sensors, WebSocket live updates
+- **Phase 1: Sensor Foundation** -- ESP32 nodes, Pi hub, REST API, dashboard
+- **Phase 2: Bee Counting** (current) -- IR beam-break sensors, traffic API, correlation alerts
 - **Phase 3: Vision Intelligence** -- ESP32-CAM, cloud sync, ML inference
 
 ## License
