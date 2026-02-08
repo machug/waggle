@@ -84,9 +84,78 @@ stuck_lanes_current = Gauge(
     labelnames=["hive_id"],
 )
 
+# --- Phase 3 Vision & Intelligence metrics ---
+photos_received = Counter(
+    "waggle_photos_received_total",
+    "Total photos received via upload",
+    labelnames=["hive_id", "device_id"],
+)
+
+ml_inference_duration = Histogram(
+    "waggle_ml_inference_seconds",
+    "ML inference duration in seconds",
+    labelnames=["hive_id"],
+)
+
+ml_detections = Counter(
+    "waggle_ml_detections_total",
+    "Total ML detections by class",
+    labelnames=["hive_id", "class_name"],
+)
+
+ml_queue_depth = Gauge(
+    "waggle_ml_queue_depth",
+    "Current number of photos pending ML processing",
+)
+
+sync_push_rows = Counter(
+    "waggle_sync_push_rows_total",
+    "Total rows pushed to cloud",
+    labelnames=["table"],
+)
+
+sync_pull_rows = Counter(
+    "waggle_sync_pull_rows_total",
+    "Total rows pulled from cloud",
+    labelnames=["table"],
+)
+
+sync_push_files = Counter(
+    "waggle_sync_push_files_total",
+    "Total photo files pushed to cloud storage",
+)
+
+sync_pull_files = Counter(
+    "waggle_sync_pull_files_total",
+    "Total photo files pulled from cloud storage",
+)
+
+webhook_delivery_success = Counter(
+    "waggle_webhook_delivery_success_total",
+    "Total successful webhook deliveries",
+    labelnames=["url"],
+)
+
+webhook_delivery_failure = Counter(
+    "waggle_webhook_delivery_failure_total",
+    "Total failed webhook deliveries",
+    labelnames=["url"],
+)
+
+disk_usage_bytes = Gauge(
+    "waggle_disk_usage_bytes",
+    "Current disk usage in bytes for photo storage",
+)
+
+photo_pruned = Counter(
+    "waggle_photos_pruned_total",
+    "Total photos pruned by retention policy",
+)
+
 # ---------------------------------------------------------------------------
 # Heartbeat writer / reader
 # ---------------------------------------------------------------------------
+
 
 class HeartbeatWriter:
     """Writes periodic heartbeat files with atomic rename.
@@ -123,8 +192,7 @@ class HeartbeatWriter:
         payload = {
             "pid": os.getpid(),
             "uptime_sec": round(time.monotonic() - self._start_monotonic, 1),
-            "ts": now.strftime("%Y-%m-%dT%H:%M:%S.")
-            + f"{now.microsecond // 1000:03d}Z",
+            "ts": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
             "details": details or {},
         }
 
@@ -164,6 +232,7 @@ class HeartbeatWriter:
 # ---------------------------------------------------------------------------
 # Service health check
 # ---------------------------------------------------------------------------
+
 
 def check_service_health(
     service_name: str,
