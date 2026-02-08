@@ -234,6 +234,9 @@ class HubStatusOut(BaseModel):
     hive_count: int
     reading_count_24h: int
     services: ServiceHealth
+    traffic_readings_24h: int = 0
+    phase2_nodes_active: int = 0
+    stuck_lanes_total: int = 0
 
 
 # --- Error ---

@@ -5,10 +5,10 @@ import time
 from datetime import UTC
 
 from fastapi import APIRouter, Request
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from waggle.models import Hive, SensorReading
+from waggle.models import BeeCount, Hive, SensorReading
 from waggle.schemas import HubStatusOut, ServiceHealth
 
 _START_TIME = time.monotonic()
@@ -47,6 +47,39 @@ def create_router():
             )
             reading_count_24h = result.scalar_one()
 
+            # Traffic readings in last 24h
+            result = await session.execute(
+                select(func.count())
+                .select_from(BeeCount)
+                .where(BeeCount.ingested_at >= cutoff)
+            )
+            traffic_readings_24h = result.scalar_one()
+
+            # Phase 2 nodes active (distinct hive_ids with bee_counts in 24h)
+            result = await session.execute(
+                select(func.count(func.distinct(BeeCount.hive_id))).where(
+                    BeeCount.ingested_at >= cutoff
+                )
+            )
+            phase2_nodes_active = result.scalar_one()
+
+            # Stuck lanes - latest bee_count per hive, sum popcount of stuck_mask
+            result = await session.execute(
+                text(
+                    "SELECT COALESCE(SUM("
+                    "  (stuck_mask & 1) + ((stuck_mask >> 1) & 1) + "
+                    "  ((stuck_mask >> 2) & 1) + ((stuck_mask >> 3) & 1) + "
+                    "  ((stuck_mask >> 4) & 1) + ((stuck_mask >> 5) & 1) + "
+                    "  ((stuck_mask >> 6) & 1) + ((stuck_mask >> 7) & 1)"
+                    "), 0) "
+                    "FROM (SELECT stuck_mask FROM bee_counts bc1 "
+                    "WHERE bc1.observed_at = (SELECT MAX(bc2.observed_at) "
+                    "FROM bee_counts bc2 "
+                    "WHERE bc2.hive_id = bc1.hive_id))"
+                )
+            )
+            stuck_lanes_total = result.scalar()
+
         # Uptime
         uptime_sec = int(time.monotonic() - _START_TIME)
 
@@ -73,6 +106,9 @@ def create_router():
             hive_count=hive_count,
             reading_count_24h=reading_count_24h,
             services=services,
+            traffic_readings_24h=traffic_readings_24h,
+            phase2_nodes_active=phase2_nodes_active,
+            stuck_lanes_total=stuck_lanes_total,
         )
 
     return router
