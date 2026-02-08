@@ -86,6 +86,10 @@ class HiveOut(BaseModel):
     latest_reading: LatestReading | None = None
     latest_traffic: LatestTrafficOut | None = None
     activity_score_today: int | None = None
+    camera_node_id: str | None = None
+    latest_photo_at: str | None = None
+    latest_ml_status: str | None = None
+    varroa_ratio: float | None = None
 
 
 class HivesResponse(BaseModel):
@@ -250,6 +254,11 @@ class HubStatusOut(BaseModel):
     traffic_readings_24h: int = 0
     phase2_nodes_active: int = 0
     stuck_lanes_total: int = 0
+    photos_24h: int = 0
+    ml_queue_depth: int = 0
+    detections_24h: int = 0
+    sync_pending_rows: int = 0
+    sync_pending_files: int = 0
 
 
 # --- Camera Nodes ---

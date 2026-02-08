@@ -204,3 +204,147 @@ async def test_status_stuck_lanes(client, auth_headers):
     resp = await client.get("/api/hub/status")
     body = resp.json()
     assert body["stuck_lanes_total"] == 2  # bit_count(3) = 2
+
+
+# --- Phase 3 ML & sync fields ---
+
+
+async def test_status_has_phase3_fields(client):
+    """Status response includes Phase 3 ML and sync fields."""
+    resp = await client.get("/api/hub/status")
+    body = resp.json()
+    assert "photos_24h" in body
+    assert "ml_queue_depth" in body
+    assert "detections_24h" in body
+    assert "sync_pending_rows" in body
+    assert "sync_pending_files" in body
+
+
+async def test_status_phase3_fields_empty_db(client):
+    """Phase 3 fields are zero with empty DB."""
+    resp = await client.get("/api/hub/status")
+    body = resp.json()
+    assert body["photos_24h"] == 0
+    assert body["ml_queue_depth"] == 0
+    assert body["detections_24h"] == 0
+    assert body["sync_pending_rows"] == 0
+    assert body["sync_pending_files"] == 0
+
+
+async def test_status_photos_24h(client, auth_headers):
+    """photos_24h counts photos ingested in last 24 hours."""
+    import hashlib
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from waggle.models import CameraNode, Photo
+    from waggle.utils.timestamps import utc_now
+
+    await client.post(
+        "/api/hives", json={"id": 1, "name": "Alpha"}, headers=auth_headers
+    )
+
+    engine = client._transport.app.state.engine
+    async with AsyncSession(engine) as session:
+        cam = CameraNode(
+            device_id="cam-001",
+            hive_id=1,
+            api_key_hash="fakehash",
+            created_at=utc_now(),
+        )
+        session.add(cam)
+        await session.flush()
+        photo = Photo(
+            hive_id=1,
+            device_id="cam-001",
+            boot_id=1,
+            captured_at=utc_now(),
+            captured_at_source="device_ntp",
+            ingested_at=utc_now(),
+            sequence=1,
+            photo_path="/photos/test.jpg",
+            file_size_bytes=1024,
+            sha256=hashlib.sha256(b"test").hexdigest(),
+            width=800,
+            height=600,
+        )
+        session.add(photo)
+        await session.commit()
+
+    resp = await client.get("/api/hub/status")
+    body = resp.json()
+    assert body["photos_24h"] == 1
+    assert body["ml_queue_depth"] == 1  # default ml_status is "pending"
+    assert body["sync_pending_files"] == 1  # default file_synced is 0
+
+
+async def test_status_detections_24h(client, auth_headers):
+    """detections_24h counts ML detections in last 24 hours."""
+    import hashlib
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from waggle.models import CameraNode, MlDetection, Photo
+    from waggle.utils.timestamps import utc_now
+
+    await client.post(
+        "/api/hives", json={"id": 1, "name": "Alpha"}, headers=auth_headers
+    )
+
+    engine = client._transport.app.state.engine
+    async with AsyncSession(engine) as session:
+        cam = CameraNode(
+            device_id="cam-001",
+            hive_id=1,
+            api_key_hash="fakehash",
+            created_at=utc_now(),
+        )
+        session.add(cam)
+        await session.flush()
+        photo = Photo(
+            hive_id=1,
+            device_id="cam-001",
+            boot_id=1,
+            captured_at=utc_now(),
+            captured_at_source="device_ntp",
+            ingested_at=utc_now(),
+            sequence=1,
+            photo_path="/photos/test.jpg",
+            file_size_bytes=1024,
+            sha256=hashlib.sha256(b"test").hexdigest(),
+            width=800,
+            height=600,
+            ml_status="completed",
+        )
+        session.add(photo)
+        await session.flush()
+        detection = MlDetection(
+            photo_id=photo.id,
+            hive_id=1,
+            detected_at=utc_now(),
+            top_class="normal",
+            top_confidence=0.95,
+            detections_json="[]",
+            inference_ms=150,
+            model_version="yolov8n-waggle-v1",
+            model_hash=hashlib.sha256(b"model").hexdigest(),
+        )
+        session.add(detection)
+        await session.commit()
+
+    resp = await client.get("/api/hub/status")
+    body = resp.json()
+    assert body["detections_24h"] == 1
+    assert body["ml_queue_depth"] == 0  # photo is "completed"
+
+
+async def test_status_sync_pending_rows(client, auth_headers):
+    """sync_pending_rows counts unsynced rows across all tables."""
+    await client.post(
+        "/api/hives", json={"id": 1, "name": "Alpha"}, headers=auth_headers
+    )
+
+    resp = await client.get("/api/hub/status")
+    body = resp.json()
+    # The hive we just created has row_synced=0 by default
+    assert body["sync_pending_rows"] >= 1
