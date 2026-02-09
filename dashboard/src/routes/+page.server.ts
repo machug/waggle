@@ -6,7 +6,7 @@ export const load: PageServerLoad = async () => {
 		const [hives, criticalAlerts] = await Promise.all([
 			apiGet<any>('/api/hives?limit=50'),
 			// Fetch unacknowledged critical/high alerts for POSSIBLE_SWARM and ABSCONDING
-			apiGet<any>('/api/alerts?acknowledged=false&limit=250').catch(() => ({ items: [] })),
+			apiGet<any>('/api/alerts?acknowledged=0&limit=200').catch(() => ({ items: [] })),
 		]);
 
 		// Build set of hive IDs with critical alerts

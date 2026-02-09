@@ -7,7 +7,7 @@ import { env } from '$env/dynamic/private';
 export async function apiRequest(path: string, options: RequestInit = {}): Promise<Response> {
 	const url = `${env.WAGGLE_API_URL}${path}`;
 	const headers = new Headers(options.headers);
-	headers.set('X-API-Key', env.WAGGLE_API_KEY);
+	headers.set('X-API-Key', env.WAGGLE_API_KEY ?? '');
 	headers.set('Content-Type', 'application/json');
 
 	return fetch(url, {

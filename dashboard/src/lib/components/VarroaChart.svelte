@@ -32,7 +32,7 @@
 
 	let { data = [], hiveName = '' }: { data: VarroaDataPoint[]; hiveName?: string } = $props();
 
-	let canvas: HTMLCanvasElement;
+	let canvas: HTMLCanvasElement = $state()!;
 	let chart: Chart | null = null;
 	let selectedDays = $state(30);
 
@@ -145,7 +145,7 @@
 							return tooltipItem.datasetIndex === 4;
 						},
 						callbacks: {
-							label: (ctx) => `${ctx.parsed.y.toFixed(1)} mites/100 bees`
+							label: (ctx) => `${ctx.parsed?.y?.toFixed(1) ?? '0.0'} mites/100 bees`
 						}
 					}
 				},

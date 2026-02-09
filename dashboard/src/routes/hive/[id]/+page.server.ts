@@ -31,7 +31,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 			// Photos: recent photos for this hive
 			apiGet<any>(`/api/hives/${hiveId}/photos?limit=30&order=desc`).catch(() => ({ items: [] })),
 			// Detections: all detections for this hive's photos
-			apiGet<any>(`/api/hives/${hiveId}/photos/detections?limit=500`).catch(() => ({ items: [] })),
+			apiGet<any>(`/api/hives/${hiveId}/detections?limit=200`).catch(() => ({ items: [] })),
 			// Varroa: daily mite load for last 90 days (chart supports 30/60/90 toggle)
 			apiGet<any>(`/api/hives/${hiveId}/varroa?days=90`).catch(() => ({ items: [] })),
 		]);

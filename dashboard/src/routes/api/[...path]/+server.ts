@@ -6,7 +6,7 @@ const handler: RequestHandler = async ({ params, request }) => {
 	const url = `${env.WAGGLE_API_URL}${path}`;
 
 	const headers = new Headers();
-	headers.set('X-API-Key', env.WAGGLE_API_KEY);
+	headers.set('X-API-Key', env.WAGGLE_API_KEY ?? '');
 
 	// Only forward Content-Type when present on the incoming request (not for GET/HEAD)
 	const contentType = request.headers.get('Content-Type');

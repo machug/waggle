@@ -32,7 +32,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	try {
 		const [hivesData, inspectionsData] = await Promise.all([
-			apiGet<HivesResponse>('/api/hives?limit=250'),
+			apiGet<HivesResponse>('/api/hives?limit=200'),
 			hiveId
 				? apiGet<InspectionsResponse>(`/api/hives/${hiveId}/inspections`)
 				: Promise.resolve({ items: [] })
